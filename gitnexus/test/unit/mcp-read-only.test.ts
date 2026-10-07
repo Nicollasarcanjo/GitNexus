@@ -5,6 +5,7 @@ import { createMCPServer } from '../../src/mcp/server.js';
 import type { LocalBackend } from '../../src/mcp/local/local-backend.js';
 
 const READ_ONLY_TOOLS = [
+  'affected_tests',
   'api_impact',
   'check',
   'context',
@@ -13,6 +14,7 @@ const READ_ONLY_TOOLS = [
   'grep',
   'impact',
   'list_repos',
+  'path_impact',
   'pdg_query',
   'query',
   'read_file',

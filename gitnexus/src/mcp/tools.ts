@@ -390,6 +390,122 @@ ${HOT_READ_STALENESS_NOTE}`,
     },
   },
   {
+    name: 'path_impact',
+    description: `File-level blast radius of a folder or file: what depends on it, and what it depends on.
+
+WHEN TO USE: Before changing anything under a path ("we are going to touch app/Console") — to hand the agent the folders, files and tests that the change can reach. Coarser and cheaper than impact(), which works on one symbol.
+AFTER THIS: Read the nearest folders first (min_depth 1 = direct dependents). Use impact() on specific symbols for call-level detail, and affected_tests() once the change is made.
+
+Returns:
+- summary: seed_files, impacted_files, impacted_folders, impacted_tests, by_depth
+- folders: impacted folders, nearest first, with how many of their files are hit
+- files: impacted files with depth (1 = depends on the path directly); capped by limit, see truncated
+- tests: every test file that reaches the path (never capped)
+- depends_on: the other direction, one hop — what the path itself uses. Entry-point code (commands, controllers, jobs) often has no dependents, and this is the context needed before editing it
+- unmatched_paths: inputs that matched no indexed file
+
+LIMITS: built from calls, imports and inheritance with confidence >= min_confidence. Runtime dispatch (routes by URL, container/facade lookups, config keys, templates) is invisible — treat the result as a lower bound.`,
+    annotations: READ_ONLY_TOOL_ANNOTATIONS,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        paths: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Repo-relative folders and/or files (e.g. ["app/Console", "app/Models/Sale.php"]). A folder selects everything below it.',
+        },
+        max_depth: {
+          type: 'number',
+          description: 'How many dependency hops to follow (default: 3). 0 = unlimited.',
+          default: 3,
+        },
+        limit: {
+          type: 'number',
+          description:
+            'Max entries in "files" (default: 200). Folders, tests and counts are never capped.',
+          default: 200,
+        },
+        include_tests: {
+          type: 'boolean',
+          description:
+            'Include test files in "files"/"folders" (default: true). They are always listed in "tests".',
+          default: true,
+        },
+        min_confidence: {
+          type: 'number',
+          description:
+            'Ignore dependency edges below this confidence (default: 0.8). Lower values admit name-only guesses, which add noise fast on a transitive walk.',
+          default: 0.8,
+        },
+        repo: {
+          type: 'string',
+          description: `Repository name or path. ${CWD_AWARE_REPO_OMISSION}`,
+        },
+      },
+      required: ['paths'],
+    },
+  },
+  {
+    name: 'affected_tests',
+    description: `Select the tests worth running for a set of changes.
+
+WHEN TO USE: On a pull request or before pushing — to run only the tests related to what changed instead of the whole suite. Reads the git diff (same scopes as detect_changes) or an explicit list of paths.
+AFTER THIS: Run command_hint (or the listed test files). If summary.fallback is "full_suite", run everything: the selection is not trustworthy for this diff, and fallback_reasons says why.
+
+Returns:
+- tests: test files to run, each with reason — "changed" (the test itself), "depends" (reaches a changed file through the graph) or "related" (heuristic: exercises the files a changed file works with)
+- changed: every changed file and how it was covered — direct, related, test, ignored (docs/images) or none
+- summary.fallback: "none" or "full_suite"
+- fallback_reasons: one sentence per change that could not be mapped (non-source files such as config, migrations, templates, lockfiles; deleted files; source no test reaches)
+- runner / command_hint: detected test runner and a ready-to-run command
+
+LIMITS: static graph, so this is a lower bound — a test that reaches the code only at runtime (HTTP route, container lookup) is not seen. Keep a periodic full-suite run. Untracked (never added) files are not part of a git diff and are not considered.`,
+    annotations: READ_ONLY_TOOL_ANNOTATIONS,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        scope: {
+          type: 'string',
+          description: 'Which changes to read: "unstaged", "staged", "all" (default), or "compare"',
+          enum: ['unstaged', 'staged', 'all', 'compare'],
+          default: 'all',
+        },
+        base_ref: {
+          type: 'string',
+          description: 'Branch/commit for "compare" scope (e.g., "origin/main")',
+        },
+        paths: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Explicit changed files (repo-relative). When given, git is not consulted and scope/base_ref are ignored.',
+        },
+        max_depth: {
+          type: 'number',
+          description: 'Dependency hops to follow from each changed file (default: 0 = unlimited).',
+          default: 0,
+        },
+        strict: {
+          type: 'boolean',
+          description:
+            'Treat heuristic ("related") coverage as not covered, so those changes ask for the full suite (default: false).',
+          default: false,
+        },
+        min_confidence: {
+          type: 'number',
+          description: 'Ignore dependency edges below this confidence (default: 0.8).',
+          default: 0.8,
+        },
+        repo: {
+          type: 'string',
+          description: `Repository name or path. ${CWD_AWARE_REPO_OMISSION}`,
+        },
+      },
+      required: [],
+    },
+  },
+  {
     name: 'detect_changes',
     description: `Analyze uncommitted git changes and find affected execution flows.
 Maps git diff hunks to indexed symbols, then traces which processes are impacted.
@@ -1131,6 +1247,8 @@ export const REPO_SCOPED_TOOLS = new Set([
   'cypher',
   'context',
   'detect_changes',
+  'path_impact',
+  'affected_tests',
   'explain',
   'pdg_query',
   'check',

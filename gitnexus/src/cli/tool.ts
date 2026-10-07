@@ -369,6 +369,55 @@ export async function detectChangesCommand(options?: {
   output(result, formatDetectChangesResult);
 }
 
+export async function pathImpactCommand(
+  paths: string[],
+  options?: {
+    depth?: string;
+    limit?: string;
+    tests?: boolean;
+    minConfidence?: string;
+    repo?: string;
+    branch?: string;
+  },
+): Promise<void> {
+  const backend = await getBackend();
+  const result = await backend.callTool('path_impact', {
+    paths,
+    max_depth: options?.depth,
+    limit: options?.limit,
+    include_tests: options?.tests,
+    min_confidence: options?.minConfidence ? Number(options.minConfidence) : undefined,
+    repo: options?.repo,
+    branch: options?.branch,
+  });
+  output(result);
+}
+
+export async function affectedTestsCommand(options?: {
+  scope?: string;
+  baseRef?: string;
+  paths?: string[];
+  depth?: string;
+  strict?: boolean;
+  minConfidence?: string;
+  repo?: string;
+  branch?: string;
+}): Promise<void> {
+  const backend = await getBackend();
+  const result = await backend.callTool('affected_tests', {
+    // --base-ref alone means "compare against it"; no need to also pass --scope.
+    scope: options?.scope || (options?.baseRef ? 'compare' : 'all'),
+    base_ref: options?.baseRef,
+    paths: options?.paths,
+    max_depth: options?.depth,
+    strict: options?.strict === true,
+    min_confidence: options?.minConfidence ? Number(options.minConfidence) : undefined,
+    repo: options?.repo,
+    branch: options?.branch,
+  });
+  output(result);
+}
+
 export async function checkCommand(options?: {
   cycles?: boolean;
   json?: boolean;

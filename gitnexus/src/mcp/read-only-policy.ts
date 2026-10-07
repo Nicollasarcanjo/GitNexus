@@ -9,6 +9,8 @@ export const MCP_READ_ONLY_TOOLS = new Set([
   'read_file',
   'grep',
   'detect_changes',
+  'path_impact',
+  'affected_tests',
   'check',
   'impact',
   'explain',

@@ -27,6 +27,16 @@ import {
   dbIdentityChanged,
 } from '../../core/lbug/pool-adapter.js';
 import { queryClassBeanMetadata } from './bean-metadata.js';
+import {
+  buildFileDependencyQuery,
+  computeAffectedTests,
+  computePathImpact,
+  INDEXED_FILES_QUERY,
+  normalizeRepoPath,
+  parseNameStatus,
+  type ChangedFile,
+  type FileDependencyEdge,
+} from './path-impact.js';
 import { querySpringAopMetadata } from './aop-metadata.js';
 import {
   SYMBOL_IDENTITY_RECOVERY_SUGGESTION,
@@ -407,6 +417,22 @@ const TOOL_STRING_ALIASES: Readonly<Record<string, readonly StringAliasDefinitio
   context: [{ canonical: 'file_path', aliases: ['file'] }],
   trace: [{ canonical: 'from_file', aliases: ['file'] }],
 };
+
+/** Accept `["a", "b"]`, `"a"` or `"a,b"` for a list-of-paths parameter. */
+function toPathList(value: unknown): string[] {
+  const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  return raw
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '');
+}
+
+/** A non-negative integer from a number or numeric string; `undefined` otherwise. */
+function toNonNegativeInt(value: unknown): number | undefined {
+  const parsed = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  if (typeof parsed !== 'number' || !Number.isFinite(parsed) || parsed < 0) return undefined;
+  return Math.trunc(parsed);
+}
 
 function normalizeToolParams(
   method: string,
@@ -2995,6 +3021,10 @@ export class LocalBackend {
         return this.withToolStaleness(repo, await this.impact(repo, p as unknown as ImpactParams));
       case 'detect_changes':
         return this.detectChanges(repo, p);
+      case 'path_impact':
+        return this.withToolStaleness(repo, await this.pathImpact(repo, p));
+      case 'affected_tests':
+        return this.withToolStaleness(repo, await this.affectedTests(repo, p));
       case 'check':
         return this.check(repo, p);
       case 'rename':
@@ -6347,6 +6377,135 @@ export class LocalBackend {
     }
 
     return { error: 'Invalid type. Use: symbol, cluster, or process' };
+  }
+
+  /**
+   * Indexed files plus the file → file dependency edges, the two inputs of
+   * path_impact and affected_tests (see ./path-impact.ts).
+   */
+  private async loadFileDependencyGraph(
+    repo: RepoHandle,
+    minConfidence: unknown,
+  ): Promise<{ indexedFiles: string[]; edges: FileDependencyEdge[] }> {
+    const confidence =
+      typeof minConfidence === 'number' && Number.isFinite(minConfidence)
+        ? minConfidence
+        : undefined;
+    const [fileRows, edgeRows] = await Promise.all([
+      executeParameterized(repo.lbugPath, INDEXED_FILES_QUERY, {}),
+      executeParameterized(repo.lbugPath, buildFileDependencyQuery(confidence), {}),
+    ]);
+    const indexedFiles: string[] = [];
+    for (const row of fileRows as any[]) {
+      const filePath = row?.filePath ?? row?.[0];
+      if (typeof filePath === 'string' && filePath) indexedFiles.push(normalizeRepoPath(filePath));
+    }
+    const edges: FileDependencyEdge[] = [];
+    for (const row of edgeRows as any[]) {
+      const src = row?.src ?? row?.[0];
+      const dst = row?.dst ?? row?.[1];
+      if (typeof src === 'string' && typeof dst === 'string' && src && dst) {
+        edges.push({ src: normalizeRepoPath(src), dst: normalizeRepoPath(dst) });
+      }
+    }
+    return { indexedFiles, edges };
+  }
+
+  /** path_impact — file-level blast radius of folders/files. */
+  private async pathImpact(repo: RepoHandle, params: Record<string, unknown>): Promise<any> {
+    const paths = toPathList(params.paths);
+    if (paths.length === 0) {
+      return { error: 'paths is required: one or more repo-relative folders or files.' };
+    }
+    await this.ensureInitialized(repo);
+
+    const { indexedFiles, edges } = await this.loadFileDependencyGraph(repo, params.min_confidence);
+    const depth = toNonNegativeInt(params.max_depth);
+    const limit = toNonNegativeInt(params.limit);
+    return computePathImpact({
+      indexedFiles,
+      edges,
+      paths,
+      // 0 means "no limit" on the wire; the pure function spells that `null`.
+      maxDepth: depth === undefined ? undefined : depth === 0 ? null : depth,
+      limit: limit === undefined || limit === 0 ? undefined : limit,
+      includeTests: params.include_tests !== false,
+    });
+  }
+
+  /** affected_tests — which tests cover a set of changed files. */
+  private async affectedTests(repo: RepoHandle, params: Record<string, unknown>): Promise<any> {
+    await this.ensureInitialized(repo);
+
+    let changedFiles: ChangedFile[];
+    const explicit = toPathList(params.paths);
+    if (explicit.length > 0) {
+      changedFiles = explicit.map((filePath) => ({
+        filePath: normalizeRepoPath(filePath),
+        status: 'modified' as const,
+      }));
+    } else {
+      const scope = typeof params.scope === 'string' && params.scope ? params.scope : 'all';
+      const baseRef = typeof params.base_ref === 'string' ? params.base_ref : undefined;
+      const scopeArgs =
+        scope === 'staged'
+          ? ['--staged']
+          : scope === 'all'
+            ? ['HEAD']
+            : scope === 'compare'
+              ? baseRef
+                ? [baseRef]
+                : null
+              : scope === 'unstaged'
+                ? []
+                : undefined;
+      if (scopeArgs === null) return { error: 'base_ref is required for "compare" scope' };
+      if (scopeArgs === undefined) {
+        return { error: `Unknown scope "${scope}". Use unstaged, staged, all or compare.` };
+      }
+      // A ref starting with "-" would be read by git as an option.
+      if (baseRef && scope === 'compare' && baseRef.startsWith('-')) {
+        return { error: `Invalid base_ref "${baseRef}".` };
+      }
+      const { execFileSync } = await import('child_process');
+      let output: string;
+      try {
+        output = execFileSync(
+          'git',
+          [
+            '-c',
+            'core.quotePath=false',
+            'diff',
+            '--name-status',
+            // A rename becomes delete + add: the old path's dependents and the
+            // new file are both relevant to test selection.
+            '--no-renames',
+            '--no-ext-diff',
+            '--color=never',
+            ...scopeArgs,
+          ],
+          {
+            cwd: resolveWorktreeCwd(repo.repoPath, process.cwd()),
+            encoding: 'utf-8',
+            maxBuffer: 64 * 1024 * 1024,
+            windowsHide: true,
+          },
+        );
+      } catch (err: any) {
+        return { error: `Git diff failed: ${err.message}` };
+      }
+      changedFiles = parseNameStatus(output);
+    }
+
+    const { indexedFiles, edges } = await this.loadFileDependencyGraph(repo, params.min_confidence);
+    const depth = toNonNegativeInt(params.max_depth);
+    return computeAffectedTests({
+      indexedFiles,
+      edges,
+      changedFiles,
+      maxDepth: depth === undefined || depth === 0 ? null : depth,
+      strict: params.strict === true,
+    });
   }
 
   /**

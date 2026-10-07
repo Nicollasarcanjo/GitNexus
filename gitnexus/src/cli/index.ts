@@ -554,6 +554,32 @@ program
   .action(createLbugLazyAction(() => import('./tool.js'), 'detectChangesCommand'));
 
 program
+  .command('path-impact <path...>')
+  .alias('path_impact')
+  .description('File-level impact of folders/files: what depends on them and what they use')
+  .option('-d, --depth <n>', 'Dependency hops to follow (default: 3, 0 = unlimited)')
+  .option('-l, --limit <n>', 'Max impacted files to list (default: 200)')
+  .option('--no-tests', 'Leave test files out of the file/folder listing')
+  .option('--min-confidence <n>', 'Ignore dependency edges below this confidence (default: 0.8)')
+  .option('-r, --repo <name>', 'Target repository')
+  .option('--branch <name>', 'Scope to a specific branch index (multi-branch repos)')
+  .action(createLbugLazyAction(() => import('./tool.js'), 'pathImpactCommand'));
+
+program
+  .command('affected-tests')
+  .alias('affected_tests')
+  .description('Select the tests related to a git diff (or to explicit paths)')
+  .option('-s, --scope <scope>', 'Which changes to read: unstaged, staged, all, or compare')
+  .option('-b, --base-ref <ref>', 'Compare against this branch/commit (e.g. origin/main)')
+  .option('-p, --paths <path...>', 'Explicit changed files instead of reading git')
+  .option('-d, --depth <n>', 'Dependency hops to follow (default: 0 = unlimited)')
+  .option('--strict', 'Ask for the full suite when a change is only covered heuristically')
+  .option('--min-confidence <n>', 'Ignore dependency edges below this confidence (default: 0.8)')
+  .option('-r, --repo <name>', 'Target repository')
+  .option('--branch <name>', 'Scope to a specific branch index (multi-branch repos)')
+  .action(createLbugLazyAction(() => import('./tool.js'), 'affectedTestsCommand'));
+
+program
   .command('check')
   .description('Run structural checks against the indexed graph')
   .option('--cycles', 'Detect circular imports and fail when any are found')
