@@ -104,8 +104,6 @@ interface UseSigmaReturn {
   resetZoom: () => void;
   focusNode: (nodeId: string) => void;
   isLayoutRunning: boolean;
-  startLayout: () => void;
-  stopLayout: () => void;
   selectedNode: string | null;
   setSelectedNode: (nodeId: string | null) => void;
   refreshHighlights: () => void;
@@ -301,6 +299,27 @@ const TREE_EDGE_WEIGHTS: Record<string, number> = {
   IMPLEMENTS: 0.13,
 };
 
+/** A folder plus every sub-folder and file below it (no in-file symbols). */
+const getFolderSubtree = (
+  graph: Graph<SigmaNodeAttributes, SigmaEdgeAttributes>,
+  folderId: string,
+): Set<string> => {
+  const subtree = new Set<string>([folderId]);
+  const queue = [folderId];
+  for (let head = 0; head < queue.length; head++) {
+    graph.forEachOutEdge(
+      queue[head],
+      (_edge, attrs, _source, target, _sourceAttrs, targetAttrs) => {
+        if (attrs.relationType !== 'CONTAINS' || subtree.has(target)) return;
+        if (targetAttrs.nodeType !== 'Folder' && targetAttrs.nodeType !== 'File') return;
+        subtree.add(target);
+        if (targetAttrs.nodeType === 'Folder') queue.push(target);
+      },
+    );
+  }
+  return subtree;
+};
+
 const clamp = (value: number, min: number, max: number): number => {
   return Math.min(max, Math.max(min, value));
 };
@@ -318,6 +337,9 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
   // Null means no focus — the whole graph renders, dimmed around the selection.
   const focusSetRef = useRef<Set<string> | null>(null);
   const focusDepthRef = useRef<number | null>(options.focusDepth ?? null);
+  // True when the focus set is a folder's containment subtree rather than an
+  // N-hop neighbourhood.
+  const focusIsSubtreeRef = useRef(false);
   // Camera state from just before focus mode zoomed in, restored on leaving it.
   const preFocusCameraRef = useRef<CameraState | null>(null);
   const highlightedRef = useRef<Set<string>>(new Set());
@@ -461,12 +483,23 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
     if (nodeId === null || !graph || !graph.hasNode(nodeId)) {
       selectedNeighborsRef.current = null;
       focusSetRef.current = null;
+      focusIsSubtreeRef.current = false;
       restorePreFocusCamera();
       return;
     }
     const depth = focusDepthRef.current;
     selectedNeighborsRef.current = new Set(graph.neighbors(nodeId));
-    focusSetRef.current = depth === null ? null : getNodesWithinHops(graph, nodeId, depth);
+    // A folder's files usually sit several CONTAINS hops below it, so an N-hop
+    // neighbourhood shows its sub-folders but not what is inside them. Focus a
+    // folder on its whole subtree instead.
+    focusIsSubtreeRef.current =
+      depth !== null && graph.getNodeAttribute(nodeId, 'nodeType') === 'Folder';
+    focusSetRef.current =
+      depth === null
+        ? null
+        : focusIsSubtreeRef.current
+          ? getFolderSubtree(graph, nodeId)
+          : getNodesWithinHops(graph, nodeId, depth);
     if (focusSetRef.current) {
       if (!preFocusCameraRef.current && sigmaRef.current) {
         preFocusCameraRef.current = sigmaRef.current.getCamera().getState();
@@ -816,6 +849,8 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
             res.size = (data.size || 8) * 1.3;
             res.zIndex = 1;
             res.forceLabel = focusSet !== null && neighbors.size <= FOCUS_FORCE_LABEL_MAX;
+          } else if (focusIsSubtreeRef.current) {
+            // Deeper members of a folder subtree keep their natural look.
           } else {
             res.color = dimColor(data.color, 0.25);
             res.size = (data.size || 8) * 0.6;
@@ -839,13 +874,17 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
           (graph.source(edge) === currentSelected || graph.target(edge) === currentSelected);
 
         if (focusSet && graph) {
-          // Focus mode. One hop: only the selected node's own edges. Deeper:
-          // every edge whose two ends are both inside the focus set. Either
-          // way it is a small subset, so it stays visible during a layout.
-          const inFocus =
-            focusDepthRef.current === 1
+          // Focus mode. Folder subtree: just the containment hierarchy. One
+          // hop: only the selected node's own edges. Deeper: every edge whose
+          // two ends are both inside the focus set. Either way it is a small
+          // subset, so it stays visible during a layout.
+          const bothEndsInFocus = () =>
+            focusSet.has(graph.source(edge)) && focusSet.has(graph.target(edge));
+          const inFocus = focusIsSubtreeRef.current
+            ? data.relationType === 'CONTAINS' && bothEndsInFocus()
+            : focusDepthRef.current === 1
               ? touchesSelected
-              : focusSet.has(graph.source(edge)) && focusSet.has(graph.target(edge));
+              : bothEndsInFocus();
           if (!inFocus) {
             res.hidden = true;
             return res;
@@ -930,7 +969,7 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
           return res;
         }
 
-        if (hasSelection) {
+        if (hasSelection && !(focusSet && focusIsSubtreeRef.current)) {
           if (touchesSelected) {
             res.color = brightenColor(data.color, 1.5);
             res.size = Math.max(3, (data.size || 1) * 4);
@@ -1958,22 +1997,6 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
     setSelectedNode(null);
   }, [setSelectedNode]);
 
-  const startLayout = useCallback(() => {
-    const graph = graphRef.current;
-    if (!graph || graph.order === 0) return;
-    if (options.layoutMode === 'tree') {
-      runTreeLayout(graph);
-    } else if (options.layoutMode === 'circles') {
-      runCirclesLayout(graph);
-    } else {
-      runLayout(graph);
-    }
-  }, [options.layoutMode, runLayout, runTreeLayout, runCirclesLayout]);
-
-  const stopLayout = useCallback(() => {
-    stopAllLayouts(true);
-  }, [stopAllLayouts]);
-
   const refreshHighlights = useCallback(() => {
     requestRefresh();
   }, [requestRefresh]);
@@ -1987,8 +2010,6 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
     resetZoom,
     focusNode,
     isLayoutRunning,
-    startLayout,
-    stopLayout,
     selectedNode,
     setSelectedNode,
     refreshHighlights,

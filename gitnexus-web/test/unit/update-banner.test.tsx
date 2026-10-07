@@ -266,15 +266,15 @@ describe('update banner', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
-  it('renders translated copy in zh-CN', async () => {
-    await i18n.changeLanguage('zh-CN');
+  it('renders translated copy in pt-BR', async () => {
+    await i18n.changeLanguage('pt-BR');
     backendMocks.fetchServerInfo.mockResolvedValue(updateInfo());
     render(<App />);
 
     await connectBackend();
 
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'GitNexus 2.0.0 已发布 — 此服务器运行 1.0.0。',
+      'GitNexus 2.0.0 está disponível — este servidor roda a 1.0.0.',
     );
   });
 

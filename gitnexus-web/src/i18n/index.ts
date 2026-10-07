@@ -38,7 +38,8 @@ export const i18nReady = i18n
   .use(initReactI18next)
   .init({
     resources,
-    fallbackLng: DEFAULT_LANGUAGE,
+    // Portuguese first; English fills any key a locale has not translated yet.
+    fallbackLng: [DEFAULT_LANGUAGE, 'en'],
     supportedLngs: SUPPORTED_LANGUAGE_CODES,
     load: 'currentOnly',
     ns: namespaceList,
@@ -48,7 +49,9 @@ export const i18nReady = i18n
     interpolation: { escapeValue: false },
     react: { useSuspense: false },
     detection: {
-      order: ['querystring', 'localStorage', 'navigator', 'htmlTag'],
+      // No browser-language sniffing: the platform opens in Portuguese unless
+      // the user picked another language (or a link asks for one with ?lng=).
+      order: ['querystring', 'localStorage'],
       lookupQuerystring: 'lng',
       lookupLocalStorage: LANGUAGE_STORAGE_KEY,
       caches: [],

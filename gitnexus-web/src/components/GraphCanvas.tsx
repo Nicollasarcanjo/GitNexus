@@ -5,8 +5,6 @@ import {
   Maximize2,
   Focus,
   RotateCcw,
-  Play,
-  Pause,
   Lightbulb,
   LightbulbOff,
   Network,
@@ -149,8 +147,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
     resetZoom,
     focusNode,
     isLayoutRunning,
-    startLayout,
-    stopLayout,
     selectedNode: sigmaSelectedNode,
     setSelectedNode: setSigmaSelectedNode,
     refreshHighlights,
@@ -466,22 +462,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
             <RotateCcw className="h-4 w-4" />
           </button>
         )}
-
-        {/* Divider */}
-        <div className="my-1 h-px bg-border-subtle" />
-
-        {/* Layout control */}
-        <button
-          onClick={isLayoutRunning ? stopLayout : startLayout}
-          className={`flex h-9 w-9 items-center justify-center rounded-md border transition-all ${
-            isLayoutRunning
-              ? 'animate-pulse border-accent bg-accent text-white shadow-glow'
-              : 'border-border-subtle bg-elevated text-text-secondary hover:bg-hover hover:text-text-primary'
-          } `}
-          title={isLayoutRunning ? t('canvas.stopLayout') : t('canvas.runLayout')}
-        >
-          {isLayoutRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-        </button>
       </div>
 
       {/* Layout running indicator */}

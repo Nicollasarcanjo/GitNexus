@@ -1,0 +1,93 @@
+{
+  "app": {
+    "name": "GitNexus",
+    "nexusAI": "Nexus AI"
+  },
+  "updateBanner": "GitNexus {{latest}} está disponível — este servidor roda a {{installed}}.",
+  "updateBannerDismiss": "Dispensar aviso de atualização",
+  "actions": {
+    "cancel": "Cancelar",
+    "dismiss": "Dispensar",
+    "tryAgain": "Tentar novamente",
+    "hide": "Ocultar",
+    "retry": "Repetir",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "close": "Fechar",
+    "run": "Executar",
+    "clear": "Limpar",
+    "remove": "Remover",
+    "focusInGraph": "Focar no grafo",
+    "expand": "Expandir",
+    "collapse": "Recolher"
+  },
+  "chat": {
+    "viewNodeInCodePanel": "Ver {{inner}} no painel de código",
+    "openInCodePanel": "Abrir no painel de código • {{inner}}",
+    "waitForVectorIndex": "Aguarde um momento, o índice vetorial está sendo criado."
+  },
+  "counts": {
+    "files_one": "{{count}} arquivo",
+    "files_many": "{{count}} arquivos",
+    "files_other": "{{count}} arquivos",
+    "nodes_one": "{{count}} nó",
+    "nodes_many": "{{count}} nós",
+    "nodes_other": "{{count}} nós",
+    "edges_one": "{{count}} aresta",
+    "edges_many": "{{count}} arestas",
+    "edges_other": "{{count}} arestas",
+    "symbols_one": "{{count}} símbolo",
+    "symbols_many": "{{count}} símbolos",
+    "symbols_other": "{{count}} símbolos",
+    "flows_one": "{{count}} fluxo",
+    "flows_many": "{{count}} fluxos",
+    "flows_other": "{{count}} fluxos"
+  },
+  "progress": {
+    "connecting": "Conectando ao servidor...",
+    "connectingShort": "Conectando...",
+    "validatingServer": "Validando servidor",
+    "validatingServerEllipsis": "Validando servidor...",
+    "downloadingGraph": "Baixando grafo...",
+    "downloadedMb": "{{mb}} MB baixados",
+    "downloadingWithPercent": "Baixando grafo... {{percent}}%",
+    "downloadingMb": "Baixando... {{mb}} MB",
+    "processing": "Processando...",
+    "processingGraph": "Processando grafo...",
+    "extractingFileContents": "Extraindo conteúdo dos arquivos",
+    "loadingGraph": "Carregando grafo...",
+    "starting": "Iniciando...",
+    "executing": "Executando...",
+    "truncated": "... (truncado)",
+    "ready": "Pronto",
+    "switchingRepository": "Trocando de repositório...",
+    "loadingRepository": "Carregando {{repo}}",
+    "validating": "Validando",
+    "failedSwitchRepository": "Falha ao trocar de repositório",
+    "unknownError": "Erro desconhecido"
+  },
+  "analyzePhases": {
+    "queued": "Na fila",
+    "cloning": "Clonando repositório",
+    "pulling": "Baixando atualizações",
+    "extracting": "Varrendo arquivos",
+    "structure": "Montando estrutura",
+    "parsing": "Analisando código",
+    "imports": "Resolvendo imports",
+    "calls": "Rastreando chamadas",
+    "heritage": "Extraindo herança",
+    "scopeResolution": "Resolvendo tipos",
+    "communities": "Detectando comunidades",
+    "processes": "Detectando processos",
+    "complete": "Pipeline concluído",
+    "lbug": "Carregando no banco de dados",
+    "fts": "Criando índices de busca",
+    "embeddings": "Gerando embeddings",
+    "done": "Concluído",
+    "retrying": "Tentando de novo após falha"
+  },
+  "units": {
+    "elapsedSeconds": "{{seconds}}s",
+    "elapsedMinutesSeconds": "{{minutes}}m {{seconds}}s"
+  }
+}

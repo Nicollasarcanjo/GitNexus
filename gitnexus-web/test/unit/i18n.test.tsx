@@ -17,39 +17,41 @@ describe('web i18n', () => {
   afterEach(async () => {
     delete (i18n.getResourceBundle('en', 'settings') as Record<string, unknown> | undefined)
       ?.crossNamespaceProbe;
-    delete (i18n.getResourceBundle('zh-CN', 'graph') as Record<string, unknown> | undefined)
+    delete (i18n.getResourceBundle('pt-BR', 'graph') as Record<string, unknown> | undefined)
       ?.crossNamespaceProbe;
     i18n.removeResourceBundle('en', 'fallback-test');
     await i18n.changeLanguage('en');
     window.localStorage.clear();
   });
 
-  it('loads matching namespace and key sets for English and Simplified Chinese', () => {
+  it('keeps every Portuguese namespace in step with its English counterpart', () => {
     expect(namespaceList).toContain('common');
-    expect(Object.keys(resources.en ?? {}).sort()).toEqual(
-      Object.keys(resources['zh-CN'] ?? {}).sort(),
-    );
+    const ptNamespaces = Object.keys(resources['pt-BR'] ?? {});
+    expect(ptNamespaces).toEqual(expect.arrayContaining(['common', 'errors', 'graph', 'header']));
 
-    for (const namespace of namespaceList) {
+    for (const namespace of ptNamespaces) {
       const enKeys = flattenKeys(resources.en?.[namespace]).sort();
-      const zhKeys = flattenKeys(resources['zh-CN']?.[namespace]).sort();
-      expect(zhKeys, namespace).toEqual(enKeys);
+      // Portuguese has a third plural category; `_many` has no English twin.
+      const ptKeys = flattenKeys(resources['pt-BR']?.[namespace])
+        .filter((key) => !key.endsWith('_many'))
+        .sort();
+      expect(ptKeys, namespace).toEqual(enKeys);
     }
   });
 
-  it('switches to zh-CN, updates html lang, and returns Chinese translations', async () => {
+  it('switches to pt-BR, updates html lang, and returns Portuguese translations', async () => {
     await i18nReady;
-    await i18n.changeLanguage('zh-CN');
+    await i18n.changeLanguage('pt-BR');
 
-    expect(i18n.t('common:progress.connecting')).toBe('正在连接服务器...');
-    expect(document.documentElement.lang).toBe('zh-CN');
+    expect(i18n.t('common:progress.connecting')).toBe('Conectando ao servidor...');
+    expect(document.documentElement.lang).toBe('pt-BR');
     expect(document.documentElement.dir).toBe('ltr');
   });
 
   it('falls back to English when the active language misses a key', async () => {
     await i18nReady;
     i18n.addResourceBundle('en', 'fallback-test', { only: 'Fallback only' });
-    await i18n.changeLanguage('zh-CN');
+    await i18n.changeLanguage('pt-BR');
 
     expect(i18n.t('fallback-test:only')).toBe('Fallback only');
   });
@@ -57,19 +59,19 @@ describe('web i18n', () => {
   it('does not fall back across unrelated namespaces', async () => {
     await i18nReady;
     i18n.addResource('en', 'settings', 'crossNamespaceProbe', 'English settings fallback');
-    i18n.addResource('zh-CN', 'graph', 'crossNamespaceProbe', 'Wrong graph fallback');
-    await i18n.changeLanguage('zh-CN');
+    i18n.addResource('pt-BR', 'graph', 'crossNamespaceProbe', 'Wrong graph fallback');
+    await i18n.changeLanguage('pt-BR');
 
     expect(i18n.t('settings:crossNamespaceProbe')).toBe('English settings fallback');
   });
 
   it('normalizes supported detector aliases and rejects unsupported languages', () => {
-    expect(normalizeSupportedLanguage('zh')).toBe('zh-CN');
-    expect(normalizeSupportedLanguage('zh-cn')).toBe('zh-CN');
-    expect(normalizeSupportedLanguage('zh_CN.UTF-8')).toBe('zh-CN');
+    expect(normalizeSupportedLanguage('pt')).toBe('pt-BR');
+    expect(normalizeSupportedLanguage('pt-br')).toBe('pt-BR');
+    expect(normalizeSupportedLanguage('pt_BR.UTF-8')).toBe('pt-BR');
     expect(normalizeSupportedLanguage('en-US')).toBe('en');
     expect(normalizeSupportedLanguage('fr')).toBeNull();
-    expect(normalizeSupportedLanguage('zh-TW')).toBeNull();
+    expect(normalizeSupportedLanguage('zh-CN')).toBeNull();
   });
 
   it('does not cache unsupported language codes', async () => {
@@ -78,7 +80,7 @@ describe('web i18n', () => {
 
     await i18n.changeLanguage('fr');
 
-    await waitFor(() => expect(document.documentElement.lang).toBe('en'));
+    await waitFor(() => expect(document.documentElement.lang).toBe('pt-BR'));
     expect(window.localStorage.getItem(LANGUAGE_STORAGE_KEY)).not.toBe('fr');
     expect((i18n.options.detection as { caches?: string[] }).caches).toEqual([]);
   });
@@ -88,11 +90,11 @@ describe('web i18n', () => {
     const user = userEvent.setup();
     render(<LanguageSwitcher />);
 
-    await user.selectOptions(screen.getByLabelText('Select language'), 'zh-CN');
+    await user.selectOptions(screen.getByLabelText('Select language'), 'pt-BR');
 
-    await waitFor(() => expect(document.documentElement.lang).toBe('zh-CN'));
-    expect(i18n.t('common:progress.connecting')).toBe('正在连接服务器...');
-    expect(window.localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe('zh-CN');
-    expect(document.documentElement.lang).toBe('zh-CN');
+    await waitFor(() => expect(document.documentElement.lang).toBe('pt-BR'));
+    expect(i18n.t('common:progress.connecting')).toBe('Conectando ao servidor...');
+    expect(window.localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe('pt-BR');
+    expect(document.documentElement.lang).toBe('pt-BR');
   });
 });

@@ -31,7 +31,9 @@ function ensureStorage(name: 'localStorage' | 'sessionStorage') {
 
 ensureStorage('localStorage');
 ensureStorage('sessionStorage');
-localStorage.removeItem(I18N_LANGUAGE_STORAGE_KEY);
+// The app defaults to pt-BR; the suite asserts on English copy, so i18n is
+// initialised in English. (It reads this once, when a test file imports it.)
+localStorage.setItem(I18N_LANGUAGE_STORAGE_KEY, 'en');
 
 // Reset storage between tests
 beforeEach(() => {

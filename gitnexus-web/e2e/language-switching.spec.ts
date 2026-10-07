@@ -47,23 +47,23 @@ test.describe('language switching', () => {
   }) => {
     await mockBackend(page);
     await page.goto('/');
-    await page.evaluate(() => window.localStorage.clear());
+    await page.evaluate(() => window.localStorage.setItem('gitnexus.lng', 'en'));
 
     await enterExploringView(page);
 
-    await page.getByTestId('language-switcher').selectOption('zh-CN');
+    await page.getByTestId('language-switcher').selectOption('pt-BR');
 
-    await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
-    await expect(page.getByText('觉得不错就点星')).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'pt-BR');
+    await expect(page.getByPlaceholder('Buscar nós...')).toBeVisible();
     await expect
       .poll(() => page.evaluate(() => window.localStorage.getItem('gitnexus.lng')))
-      .toBe('zh-CN');
+      .toBe('pt-BR');
 
     await page.reload();
 
-    await expect(page.getByTestId('language-switcher')).toHaveValue('zh-CN', { timeout: 20_000 });
-    await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
-    await expect(page.getByText('觉得不错就点星')).toBeVisible();
+    await expect(page.getByTestId('language-switcher')).toHaveValue('pt-BR', { timeout: 20_000 });
+    await expect(page.locator('html')).toHaveAttribute('lang', 'pt-BR');
+    await expect(page.getByPlaceholder('Buscar nós...')).toBeVisible();
 
     await page.getByTestId('language-switcher').selectOption('en');
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');

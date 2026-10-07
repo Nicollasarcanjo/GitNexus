@@ -1,0 +1,85 @@
+{
+  "success": {
+    "title": "Servidor conectado",
+    "description": "Preparando o grafo de conhecimento do seu código..."
+  },
+  "loading": {
+    "largeRepoHint": "Em repositórios grandes isso pode levar um momento"
+  },
+  "guide": {
+    "copyAria": "Copiar para a área de transferência",
+    "copiedAria": "Copiado!",
+    "startServer": "Inicie o servidor local",
+    "devDescription": "Suba o backend Express em outro terminal para liberar o grafo completo.",
+    "prodDescription": "Basta um comando. O navegador conecta sozinho.",
+    "copyCommand": "Copie o comando",
+    "copyCommandDescription": "Clique no ícone do terminal para copiar.",
+    "done": "feito",
+    "orInstallGlobally": "ou instale globalmente",
+    "globalInstall": "Instalação global",
+    "startBackend": "Iniciar backend",
+    "terminal": "Terminal",
+    "waitingForServer": "Aguardando o servidor iniciar",
+    "pasteAndRun": "Cole e execute no terminal",
+    "pasteAndRunDescription": "Abra um terminal na raiz do projeto, cole e pressione Enter.",
+    "listeningForServer": "Procurando o servidor",
+    "willAutoConnect": "Conecta sozinho quando detectar",
+    "autoConnects": "Conecta sozinho e abre o grafo",
+    "autoConnectsDescription": "Não precisa recarregar — a página detecta o servidor automaticamente.",
+    "requires": "Requer",
+    "port": "Porta 4747"
+  },
+  "analyzeFirst": {
+    "title": "Analise seu primeiro repositório",
+    "description": "Cole a URL de um repositório e o GitNexus vai cloná-lo, analisar o código e montar um grafo de conhecimento — direto no navegador.",
+    "footer": "Somente repositórios públicos · Clonado localmente pelo servidor · Nenhum dado sai da sua máquina"
+  },
+  "landing": {
+    "chooseRepository": "Escolha um repositório",
+    "description": "Selecione um repositório indexado para explorar ou analise um novo.",
+    "indexed": "Indexado {{time}}",
+    "orAnalyzeNew": "ou analise um novo",
+    "footer": "Repositórios públicos e privados · Clonado localmente pelo servidor · Nenhum dado sai da sua máquina",
+    "time": {
+      "justNow": "agora mesmo",
+      "minutesAgo": "há {{count}} min",
+      "hoursAgo": "há {{count}} h",
+      "daysAgo": "há {{count}} d"
+    }
+  },
+  "repoAnalyzer": {
+    "inputType": "Tipo de entrada",
+    "githubUrl": "URL do GitHub",
+    "gitlabUrl": "URL do GitLab",
+    "azureDevOpsUrl": "Azure DevOps",
+    "localFolder": "Pasta local",
+    "starting": "Iniciando análise...",
+    "analyzeRepository": "Analisar repositório",
+    "complete": "Análise concluída",
+    "loadingGraph": "Carregando grafo...",
+    "defaultRepoName": "repositório",
+    "githubRepositoryUrl": "URL do repositório no GitHub",
+    "githubTokenLabel": "Token de acesso pessoal (opcional)",
+    "githubTokenPlaceholder": "ghp_… ou github_pat_…",
+    "githubTokenHelp": "Necessário para repositórios privados. Precisa do escopo 'repo' (ou Contents:read, no token granular). Enviado uma única vez, não é armazenado.",
+    "gitlabRepositoryUrl": "URL do repositório no GitLab",
+    "gitlabSupported": "Funciona com GitLab.com e instâncias próprias de GitLab.",
+    "azureDevOpsRepositoryUrl": "URL do repositório no Azure DevOps",
+    "azureDevOpsSupported": "Formato: https://dev.azure.com/organizacao/projeto/_git/repositorio",
+    "localFolderPath": "Caminho da pasta local",
+    "hideBackground": "Ocultar (a análise continua em segundo plano)",
+    "upload": {
+      "button": "Enviar uma pasta",
+      "uploading": "Enviando…",
+      "selected": "{{fileCount}} arquivos prontos ({{dropped}} ignorados: .git, node_modules, saída de build)",
+      "selectedDrop": "{{fileCount, number}} arquivos prontos ({{skippedDirs, number}} pastas e {{dropped, number}} arquivos ignorados: .git, node_modules, saída de build, arquivos acima de 25 MB)",
+      "empty": "Nenhum arquivo analisável encontrado nessa pasta.",
+      "dropHint": "ou solte uma pasta aqui",
+      "dropActive": "Solte para enviar esta pasta",
+      "reading": "Lendo pasta… {{fileCount, number}} arquivos encontrados",
+      "dropSingleFolder": "Solte uma única pasta, não arquivos nem várias pastas.",
+      "dropTooManyFiles": "Essa pasta tem mais de {{max, number}} arquivos. Solte uma subpasta.",
+      "dropUnsupported": "Este navegador não consegue ler uma pasta solta aqui. Use o botão “Enviar uma pasta”."
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "unknown": "Erro desconhecido",
+  "connectFailed": "Falha ao conectar ao servidor",
+  "loadGraphFailed": "Falha ao carregar o grafo",
+  "failedToConnect": "Falha ao conectar",
+  "analysisFailed": "A análise falhou. Verifique os logs do servidor.",
+  "startAnalysisFailed": "Falha ao iniciar a análise",
+  "invalidGithubUrl": "Informe uma URL válida de repositório do GitHub.",
+  "invalidAzureDevOpsUrl": "Informe uma URL válida de repositório do Azure DevOps.",
+  "missingFolderPath": "Informe o caminho de uma pasta.",
+  "backend": {
+    "reconnecting": "Conexão com o servidor perdida. Reconectando…",
+    "network": "Não foi possível alcançar o servidor GitNexus. Confira se `gitnexus serve` está rodando.",
+    "timeout": "O servidor demorou demais para responder. Tente de novo em instantes.",
+    "rateLimited": "Requisições demais. Tente de novo em {{seconds}}s.",
+    "notFound": "O repositório ou recurso solicitado não foi encontrado.",
+    "unauthorized": "Esta instalação do GitNexus exige um token de acesso. Ele fica na variável de ambiente GITNEXUS_SERVE_AUTH_TOKEN do serviço gitnexus-web no painel do Render; cole-o nas Configurações.",
+    "originBlocked": "Esta ação não está disponível pela interface hospedada. Abra o GitNexus pelo endereço do próprio servidor (ex.: http://localhost:4747) para continuar.",
+    "client": "A requisição falhou: {{message}}",
+    "server": "Erro do servidor: {{message}}"
+  }
+}

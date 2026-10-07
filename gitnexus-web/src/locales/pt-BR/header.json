@@ -1,0 +1,17 @@
+{
+  "repositories": "Repositórios",
+  "active": "ativo",
+  "reanalyzing": "Reanalisando...",
+  "reanalyzeRepo": "Reanalisar {{repoName}}",
+  "deleteRepo": "Excluir {{repoName}}",
+  "reanalyzingRepo": "Reanalisando {{repoName}}: {{message}}",
+  "analyzeNew": "Analisar um novo repositório...",
+  "searchRepositories": "Buscar repositórios...",
+  "noRepositoriesFound": "Nenhum repositório encontrado para \"{{query}}\"",
+  "searchNodes": "Buscar nós...",
+  "noNodesFound": "Nenhum nó encontrado para \"{{query}}\"",
+  "aiSettings": "Configurações de IA",
+  "help": "Ajuda",
+  "language": "Idioma",
+  "selectLanguage": "Selecionar idioma"
+}
