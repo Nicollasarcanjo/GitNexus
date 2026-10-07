@@ -1,6 +1,7 @@
 import { PanelRightClose, GitBranch } from '@/lib/lucide-icons';
 import { useAppState } from '../hooks/useAppState';
 import { ProcessesPanel } from './ProcessesPanel';
+import { IconButton } from './ui';
 import { useTranslation } from 'react-i18next';
 
 export const RightPanel = () => {
@@ -17,13 +18,14 @@ export const RightPanel = () => {
           <span>{t('processes.panelTitle')}</span>
         </div>
 
-        <button
+        <IconButton
+          label={t('processes.closePanel')}
+          tone="ghost"
+          size="sm"
           onClick={() => setRightPanelOpen(false)}
-          className="rounded p-1.5 text-text-muted transition-colors hover:bg-hover hover:text-text-primary"
-          title={t('processes.closePanel')}
         >
           <PanelRightClose className="h-4 w-4" />
-        </button>
+        </IconButton>
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">

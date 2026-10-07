@@ -76,7 +76,7 @@ function SuccessCard() {
 
       <div className="relative">
         {/* Animated check icon */}
-        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 shadow-[0_0_30px_rgba(16,185,129,0.15)]">
+        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/15">
           <Check className="h-8 w-8 text-emerald-400" />
         </div>
 
@@ -118,7 +118,7 @@ function LoadingCard({ message }: { message: string }) {
 
       <div className="relative">
         {/* Spinner */}
-        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/20 to-accent-dim/10 shadow-glow-soft">
+        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-accent/30 bg-accent/15">
           <Loader2 className="h-8 w-8 animate-spin text-accent" />
         </div>
 

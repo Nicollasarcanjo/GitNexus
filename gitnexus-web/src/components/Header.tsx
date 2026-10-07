@@ -9,6 +9,7 @@ import {
   Loader2,
 } from '@/lib/lucide-icons';
 import { useAppState } from '../hooks/useAppState';
+import { Button } from './ui';
 import {
   deleteRepo,
   fetchRepos,
@@ -25,6 +26,7 @@ import { RepoAnalyzer } from './RepoAnalyzer';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { translateProgressMessage } from '../i18n/progress';
 import { formatBackendError } from '../i18n/error-messages';
+import { APP_NAME } from '../config/ui-constants';
 
 // Color mapping for node types in search results
 const NODE_TYPE_COLORS: Record<string, string> = {
@@ -168,10 +170,10 @@ export const Header = ({
       <div className="flex items-center gap-4">
         {/* Logo */}
         <div className="flex items-center gap-2.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-accent to-node-interface text-sm font-bold text-white shadow-glow">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-sm font-bold text-white">
             ◇
           </div>
-          <span className="text-[15px] font-semibold tracking-tight">GitNexus</span>
+          <span className="text-[15px] font-semibold tracking-tight">{APP_NAME}</span>
         </div>
 
         {/* Project badge + repo dropdown */}
@@ -527,18 +529,10 @@ export const Header = ({
         <LanguageSwitcher />
 
         {/* Execution flows panel */}
-        <button
-          onClick={() => setRightPanelOpen(!isRightPanelOpen)}
-          aria-pressed={isRightPanelOpen}
-          className={`flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition-colors ${
-            isRightPanelOpen
-              ? 'border-accent bg-accent text-white'
-              : 'border-border-subtle bg-surface text-text-secondary hover:bg-hover hover:text-text-primary'
-          }`}
-        >
+        <Button active={isRightPanelOpen} onClick={() => setRightPanelOpen(!isRightPanelOpen)}>
           <GitBranch className="h-4 w-4" />
           <span>{t('graph:processes.togglePanel')}</span>
-        </button>
+        </Button>
       </div>
     </header>
   );

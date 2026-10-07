@@ -17,6 +17,7 @@ import { RepoAnalyzer } from './RepoAnalyzer';
 import { repoIdentity, type BackendRepo } from '../services/backend-client';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
+import { APP_NAME } from '../config/ui-constants';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ function RepoCard({ repo, onClick }: { repo: BackendRepo; onClick: () => void })
     <button
       onClick={onClick}
       data-testid="landing-repo-card"
-      className="group w-full cursor-pointer rounded-xl border border-border-default bg-elevated p-4 text-left transition-all duration-200 hover:border-accent/40 hover:bg-hover hover:shadow-glow-soft"
+      className="group w-full cursor-pointer rounded-xl border border-border-default bg-elevated p-4 text-left transition-all duration-200 hover:border-accent/40 hover:bg-hover"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -110,7 +111,7 @@ export const RepoLanding = ({ repos, onSelectRepo, onAnalyzeComplete }: RepoLand
           <div className="mb-2 inline-flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 text-accent/70" />
             <span className="text-[11px] font-medium tracking-widest text-accent/80 uppercase">
-              GitNexus
+              {APP_NAME}
             </span>
           </div>
 

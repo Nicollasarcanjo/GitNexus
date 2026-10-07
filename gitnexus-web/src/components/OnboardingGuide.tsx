@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Check, Copy, Terminal, Server, Zap, Sparkles } from '@/lib/lucide-icons';
-import { REQUIRED_NODE_VERSION } from '../config/ui-constants';
+import { REQUIRED_NODE_VERSION, APP_NAME } from '../config/ui-constants';
 import { useTranslation } from 'react-i18next';
 
 // ── Design constants ─────────────────────────────────────────────────────────
@@ -60,9 +60,7 @@ function TerminalWindow({
   return (
     <div
       className={`overflow-hidden rounded-xl border transition-all duration-300 ${
-        isActive
-          ? 'border-accent/40 shadow-glow-soft'
-          : 'border-border-default hover:border-accent/20 hover:shadow-glow-soft'
+        isActive ? 'border-accent/40' : 'border-border-default hover:border-accent/20'
       } `}
     >
       {/* Title bar */}
@@ -228,7 +226,7 @@ export const OnboardingGuide = ({ isPolling }: OnboardingGuideProps) => {
           <div className="mb-2 inline-flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 text-accent/70" />
             <span className="text-[11px] font-medium tracking-widest text-accent/80 uppercase">
-              GitNexus
+              {APP_NAME}
             </span>
           </div>
           <h2 className="text-lg leading-snug font-semibold text-text-primary">

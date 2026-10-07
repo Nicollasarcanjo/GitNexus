@@ -170,7 +170,7 @@ function AnalyzeButton({
       disabled={!canSubmit || isLoading}
       className={` ${sizeClass} flex items-center justify-center gap-2.5 rounded-xl font-medium transition-all duration-200 ${
         canSubmit && !isLoading
-          ? 'cursor-pointer bg-accent text-white shadow-glow-soft hover:-translate-y-0.5 hover:bg-accent/90 hover:shadow-glow'
+          ? 'cursor-pointer bg-accent text-white hover:-translate-y-0.5 hover:bg-accent/90'
           : 'cursor-not-allowed border border-border-subtle bg-elevated text-text-muted'
       } `}
     >
@@ -193,7 +193,7 @@ function DoneState({ repoName }: { repoName: string }) {
       aria-live="polite"
       data-testid="analyze-done"
     >
-      <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/15 shadow-[0_0_20px_rgba(16,185,129,0.15)]">
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/15">
         <Check className="h-6 w-6 text-emerald-400" />
       </div>
       <div className="text-center">

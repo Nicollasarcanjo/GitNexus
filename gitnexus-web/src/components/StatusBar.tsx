@@ -35,7 +35,7 @@ export const StatusBar = () => {
           <>
             <div className="h-1 w-28 overflow-hidden rounded-full bg-elevated">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-accent to-node-interface transition-all duration-300"
+                className="h-full rounded-full bg-accent transition-all duration-300"
                 style={{ width: `${progress.percent}%` }}
               />
             </div>

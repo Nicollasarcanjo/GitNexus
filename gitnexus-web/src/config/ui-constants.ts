@@ -66,3 +66,6 @@ export const LARGE_GRAPH_EDGE_THRESHOLD = resolveThreshold(
 /** Minimum Node.js version required by the gitnexus CLI (injected by Vite from package.json engines). */
 declare const __REQUIRED_NODE_VERSION__: string;
 export const REQUIRED_NODE_VERSION = __REQUIRED_NODE_VERSION__;
+
+/** Product name shown in the UI chrome. Change it here to rebrand the platform. */
+export const APP_NAME = 'GitNexus';

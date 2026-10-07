@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Key } from '@/lib/lucide-icons';
 import { useTranslation } from 'react-i18next';
 import { getAuthToken, setAuthToken } from '../services/backend-client';
-import { SecretInput } from './ui/SecretInput';
+import { Button, SecretInput } from './ui';
 
 interface AccessTokenPromptProps {
   /** Called after the token is stored, so the caller can re-probe immediately. */
@@ -52,12 +52,9 @@ export const AccessTokenPrompt = ({ onSubmit }: AccessTokenPromptProps) => {
         hideLabel={t('accessToken.hide')}
       />
 
-      <button
-        type="submit"
-        className="mt-4 w-full cursor-pointer rounded-xl bg-accent px-4 py-3 text-sm font-medium text-white shadow-glow-soft transition-all hover:bg-accent/90 hover:shadow-glow"
-      >
+      <Button type="submit" variant="primary" size="lg" fullWidth className="mt-4">
         {t('accessToken.connect')}
-      </button>
+      </Button>
 
       <p className="mt-4 border-t border-border-subtle pt-4 text-center text-xs leading-relaxed text-text-muted">
         {t('accessToken.sessionNote')}

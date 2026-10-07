@@ -21,6 +21,7 @@ import {
 } from '../lib/graph-adapter';
 import type { GraphNode } from 'gitnexus-shared';
 import { QueryFAB } from './QueryFAB';
+import { IconButton, SegmentedTabs } from './ui';
 import Graph from 'graphology';
 import { useTranslation } from 'react-i18next';
 import { LARGE_GRAPH_NODE_THRESHOLD } from '../config/ui-constants';
@@ -256,51 +257,29 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
       </div>
 
       {/* View Mode Tabs */}
-      <div
-        role="tablist"
-        aria-label={t('canvas.viewModes.label')}
-        className="absolute top-4 left-1/2 z-20 flex -translate-x-1/2 gap-1 rounded-lg border border-border-subtle bg-elevated p-1"
-      >
-        <button
-          role="tab"
-          aria-selected={graphViewMode === 'force'}
-          onClick={() => handleViewModeChange('force')}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
-            graphViewMode === 'force'
-              ? 'bg-accent text-white'
-              : 'text-text-secondary hover:bg-hover hover:text-text-primary'
-          }`}
-        >
-          <Network className="h-3.5 w-3.5" />
-          {t('canvas.viewModes.force')}
-        </button>
-        <button
-          role="tab"
-          aria-selected={graphViewMode === 'tree'}
-          onClick={() => handleViewModeChange('tree')}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
-            graphViewMode === 'tree'
-              ? 'bg-accent text-white'
-              : 'text-text-secondary hover:bg-hover hover:text-text-primary'
-          }`}
-        >
-          <GitBranch className="h-3.5 w-3.5" />
-          {t('canvas.viewModes.tree')}
-        </button>
-        <button
-          role="tab"
-          aria-selected={graphViewMode === 'circles'}
-          onClick={() => handleViewModeChange('circles')}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
-            graphViewMode === 'circles'
-              ? 'bg-accent text-white'
-              : 'text-text-secondary hover:bg-hover hover:text-text-primary'
-          }`}
-        >
-          <Target className="h-3.5 w-3.5" />
-          {t('canvas.viewModes.circles')}
-        </button>
-      </div>
+      <SegmentedTabs
+        label={t('canvas.viewModes.label')}
+        value={graphViewMode}
+        onChange={handleViewModeChange}
+        className="absolute top-4 left-1/2 z-20 -translate-x-1/2"
+        options={[
+          {
+            value: 'force',
+            label: t('canvas.viewModes.force'),
+            icon: <Network className="h-3.5 w-3.5" />,
+          },
+          {
+            value: 'tree',
+            label: t('canvas.viewModes.tree'),
+            icon: <GitBranch className="h-3.5 w-3.5" />,
+          },
+          {
+            value: 'circles',
+            label: t('canvas.viewModes.circles'),
+            icon: <Target className="h-3.5 w-3.5" />,
+          },
+        ]}
+      />
 
       {/* Sigma container */}
       <div
@@ -359,51 +338,28 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
 
       {/* Graph Controls - Bottom Right */}
       <div className="absolute right-4 bottom-4 z-10 flex flex-col gap-1">
-        <button
-          onClick={zoomIn}
-          className="flex h-9 w-9 items-center justify-center rounded-md border border-border-subtle bg-elevated text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
-          title={t('canvas.zoomIn')}
-        >
+        <IconButton label={t('canvas.zoomIn')} onClick={zoomIn}>
           <ZoomIn className="h-4 w-4" />
-        </button>
-        <button
-          onClick={zoomOut}
-          className="flex h-9 w-9 items-center justify-center rounded-md border border-border-subtle bg-elevated text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
-          title={t('canvas.zoomOut')}
-        >
+        </IconButton>
+        <IconButton label={t('canvas.zoomOut')} onClick={zoomOut}>
           <ZoomOut className="h-4 w-4" />
-        </button>
-        <button
-          onClick={resetZoom}
-          className="flex h-9 w-9 items-center justify-center rounded-md border border-border-subtle bg-elevated text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
-          title={t('canvas.fit')}
-        >
+        </IconButton>
+        <IconButton label={t('canvas.fit')} onClick={resetZoom}>
           <Maximize2 className="h-4 w-4" />
-        </button>
+        </IconButton>
 
-        {/* Divider */}
-        <div className="my-1 h-px bg-border-subtle" />
+        {(appSelectedNode || sigmaSelectedNode) && <div className="my-1 h-px bg-border-subtle" />}
 
-        {/* Focus on selected */}
         {appSelectedNode && (
-          <button
-            onClick={handleFocusSelected}
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-accent/30 bg-accent/20 text-accent transition-colors hover:bg-accent/30"
-            title={t('canvas.focusSelected')}
-          >
+          <IconButton label={t('canvas.focusSelected')} tone="accent" onClick={handleFocusSelected}>
             <Focus className="h-4 w-4" />
-          </button>
+          </IconButton>
         )}
 
-        {/* Clear selection */}
         {sigmaSelectedNode && (
-          <button
-            onClick={handleClearSelection}
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-border-subtle bg-elevated text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
-            title={t('canvas.clearSelection')}
-          >
+          <IconButton label={t('canvas.clearSelection')} onClick={handleClearSelection}>
             <RotateCcw className="h-4 w-4" />
-          </button>
+          </IconButton>
         )}
       </div>
 

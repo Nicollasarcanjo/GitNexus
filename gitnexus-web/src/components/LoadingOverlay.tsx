@@ -21,15 +21,15 @@ export const LoadingOverlay = ({ progress }: LoadingOverlayProps) => {
 
       {/* Pulsing orb */}
       <div className="relative mb-10">
-        <div className="h-28 w-28 animate-pulse-glow rounded-full bg-gradient-to-br from-accent to-node-interface" />
-        <div className="absolute inset-0 h-28 w-28 rounded-full bg-gradient-to-br from-accent to-node-interface opacity-50 blur-xl" />
+        <div className="h-28 w-28 animate-pulse rounded-full bg-accent" />
+        <div className="absolute inset-0 h-28 w-28 rounded-full bg-accent opacity-50 blur-xl" />
       </div>
 
       {/* Progress bar */}
       <div className="mb-4 w-80">
         <div className="h-1.5 overflow-hidden rounded-full bg-elevated">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-accent to-node-interface transition-all duration-300 ease-out"
+            className="h-full rounded-full bg-accent transition-all duration-300 ease-out"
             style={{ width: `${progress.percent}%` }}
           />
         </div>

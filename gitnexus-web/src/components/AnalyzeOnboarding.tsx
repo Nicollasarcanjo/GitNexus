@@ -18,6 +18,7 @@
 import { Sparkles, GitBranch } from '@/lib/lucide-icons';
 import { RepoAnalyzer } from './RepoAnalyzer';
 import { useTranslation } from 'react-i18next';
+import { APP_NAME } from '../config/ui-constants';
 
 interface AnalyzeOnboardingProps {
   /** Called when analysis finishes and the repo is ready to load. */
@@ -40,12 +41,12 @@ export const AnalyzeOnboarding = ({ onComplete }: AnalyzeOnboardingProps) => {
           <div className="mb-2 inline-flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 text-accent/70" />
             <span className="text-[11px] font-medium tracking-widest text-accent/80 uppercase">
-              GitNexus
+              {APP_NAME}
             </span>
           </div>
 
           {/* Icon */}
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/20 to-accent-dim/10 shadow-glow-soft">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-accent/30 bg-accent/15">
             <GitBranch className="h-7 w-7 text-accent" />
           </div>
 

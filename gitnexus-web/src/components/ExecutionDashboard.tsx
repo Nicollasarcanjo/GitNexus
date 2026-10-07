@@ -12,7 +12,7 @@ import {
   type OpsLaneMetrics,
   type OpsSnapshot,
 } from '../services/backend-client';
-import { DEFAULT_BACKEND_URL } from '../config/ui-constants';
+import { DEFAULT_BACKEND_URL, APP_NAME } from '../config/ui-constants';
 
 /** GET /api/ops is 60/min; safety REST + immediate tick + 1s would 429. */
 const OPS_POLL_INTERVAL_MS = 2_000;
@@ -348,7 +348,7 @@ export const ExecutionDashboard = () => {
       <header className="border-b border-border-subtle bg-deep/90 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-xs tracking-[0.2em] text-accent uppercase">GitNexus</div>
+            <div className="text-xs tracking-[0.2em] text-accent uppercase">{APP_NAME}</div>
             <h1 className="text-lg font-semibold">Execution Ops</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
