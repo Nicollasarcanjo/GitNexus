@@ -213,7 +213,7 @@ export const QueryFAB = () => {
   return (
     <div
       ref={panelRef}
-      className="absolute bottom-4 left-4 z-20 w-[480px] max-w-[calc(100%-2rem)] animate-fade-in rounded-xl border border-cyan-500/30 bg-deep/95 shadow-[0_0_40px_rgba(6,182,212,0.2)] backdrop-blur-md"
+      className="absolute bottom-4 left-4 z-20 w-[480px] max-w-[calc(100%-2rem)] animate-fade-in rounded-xl border border-cyan-500/30 bg-deep shadow-[0_0_40px_rgba(6,182,212,0.2)]"
     >
       <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
         <div className="flex items-center gap-2">
@@ -343,7 +343,7 @@ export const QueryFAB = () => {
           </div>
 
           {showResults && queryResult.rows.length > 0 && (
-            <div className="scrollbar-thin max-h-48 overflow-auto border-t border-border-subtle">
+            <div className="max-h-48 scrollbar-thin overflow-auto border-t border-border-subtle">
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-surface">
                   <tr>

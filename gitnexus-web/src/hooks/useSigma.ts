@@ -5,7 +5,9 @@ import FA2Layout from 'graphology-layout-forceatlas2/worker';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import noverlap from 'graphology-layout-noverlap';
 import EdgeCurveProgram from '@sigma/edge-curve';
-import { SigmaNodeAttributes, SigmaEdgeAttributes } from '../lib/graph-adapter';
+import { EdgeRectangleProgram } from 'sigma/rendering';
+import type { CameraState } from 'sigma/types';
+import { SigmaNodeAttributes, SigmaEdgeAttributes, getNodesWithinHops } from '../lib/graph-adapter';
 import type { NodeAnimation } from './useAppState';
 import type { EdgeType } from '../lib/constants';
 // Helper: Parse hex color to RGB
@@ -33,8 +35,22 @@ const rgbToHex = (r: number, g: number, b: number): string => {
   );
 };
 
+// The reducers run for every node/edge on each refresh, but only ever see a
+// handful of distinct (color, amount) pairs — cache instead of re-parsing hex.
+const dimColorCache = new Map<string, string>();
+const brightenColorCache = new Map<string, string>();
+
 // Dim a color by mixing with dark background (keeps color hint)
 const dimColor = (hex: string, amount: number): string => {
+  const cacheKey = `${hex}|${amount}`;
+  const cached = dimColorCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const result = computeDimColor(hex, amount);
+  dimColorCache.set(cacheKey, result);
+  return result;
+};
+
+const computeDimColor = (hex: string, amount: number): string => {
   const rgb = hexToRgb(hex);
   const darkBg = { r: 18, g: 18, b: 28 }; // #12121c - dark background
   return rgbToHex(
@@ -46,6 +62,15 @@ const dimColor = (hex: string, amount: number): string => {
 
 // Brighten a color (increase luminosity)
 const brightenColor = (hex: string, factor: number): string => {
+  const cacheKey = `${hex}|${factor}`;
+  const cached = brightenColorCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const result = computeBrightenColor(hex, factor);
+  brightenColorCache.set(cacheKey, result);
+  return result;
+};
+
+const computeBrightenColor = (hex: string, factor: number): string => {
   const rgb = hexToRgb(hex);
   return rgbToHex(
     rgb.r + ((255 - rgb.r) * (factor - 1)) / factor,
@@ -63,6 +88,11 @@ interface UseSigmaOptions {
   animatedNodes?: Map<string, NodeAnimation>;
   visibleEdgeTypes?: EdgeType[];
   layoutMode?: 'force' | 'tree' | 'circles';
+  /**
+   * With a node selected, render only what is within this many hops of it and
+   * hide everything else. `null` keeps the whole graph visible (dimmed).
+   */
+  focusDepth?: number | null;
 }
 
 interface UseSigmaReturn {
@@ -118,16 +148,63 @@ const getFA2Settings = (nodeCount: number) => {
   };
 };
 
-// Layout duration - let it run longer for better results
-// Web Worker + WebGL means minimal system impact
+// Layout duration. The worker keeps the CPU off the main thread, but every
+// iteration still re-uploads the whole graph to the GPU, so the canvas stays
+// expensive for as long as this runs. Nodes start near their parents and
+// converge fast; the play button re-runs the layout if more passes are wanted.
 const getLayoutDuration = (nodeCount: number): number => {
-  if (nodeCount > 10000) return 45000; // 45s for huge graphs
-  if (nodeCount > 5000) return 35000; // 35s
-  if (nodeCount > 2000) return 30000; // 30s
-  if (nodeCount > 1000) return 30000; // 30s
-  if (nodeCount > 500) return 25000; // 25s
-  return 20000; // 20s for small graphs
+  if (nodeCount > 10000) return 30000; // 30s for huge graphs
+  if (nodeCount > 5000) return 25000; // 25s
+  if (nodeCount > 2000) return 20000; // 20s
+  if (nodeCount > 1000) return 15000; // 15s
+  if (nodeCount > 500) return 12000; // 12s
+  return 8000; // 8s for small graphs
 };
+
+// Above these sizes the per-edge curve shader and per-frame label pass are the
+// dominant render cost, and individual curves are no longer distinguishable.
+const STRAIGHT_EDGE_THRESHOLD = 5000;
+const HIDE_LABELS_ON_MOVE_NODE_THRESHOLD = 3000;
+// While a layout runs every repaint re-indexes all edges, which is most of the
+// cost on big graphs. Above this edge count they are hidden until it settles
+// (same idea as hideEdgesOnMove).
+const HIDE_EDGES_DURING_LAYOUT_THRESHOLD = 20000;
+// Sigma draws a label pill on the 2D hover canvas for every `highlighted` node
+// on every frame. Past this many highlighted nodes the pills are unreadable and
+// dominate render time, so nodes keep their highlight color / size only.
+const MAX_HIGHLIGHT_LABELS = 300;
+// ForceAtlas2 writes every iteration back to the graph, and Sigma answers each
+// write by re-reducing and re-indexing everything on the main thread. Above
+// this node count the worker runs on a detached copy instead and positions are
+// copied over at the paced repaint cadence.
+const DETACHED_FA2_NODE_THRESHOLD = 5000;
+// Noverlap runs synchronously on the main thread and its cost explodes with
+// dense clusters: on a ~31k-node graph the "light cleanup" froze the tab for
+// about two minutes when the layout ended. FA2 already runs with adjustSizes,
+// so past this size the cleanup pass is skipped.
+const NOVERLAP_MAX_NODES = 5000;
+// In focus mode the selected node's neighbours always show their label up to
+// this many; beyond it Sigma's normal label density rules apply.
+const FOCUS_FORCE_LABEL_MAX = 60;
+
+const sameSet = (a: Set<string>, b: Set<string>): boolean => {
+  if (a === b) return true;
+  if (a.size !== b.size) return false;
+  for (const value of a) if (!b.has(value)) return false;
+  return true;
+};
+
+const sameList = <T>(a: T[] | null, b: T[] | null): boolean => {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+};
+// Node effects (pulse / ripple / glow) repaint at this rate instead of every frame.
+const EFFECTS_FRAME_MS = 33;
+// Tree / circles layouts wait this many multiples of the last repaint's cost
+// before repainting again.
+const LAYOUT_RENDER_BACKOFF = 2;
 
 const TREE_MAX_X = 540;
 const TREE_REPULSION_RANGE = 130;
@@ -234,10 +311,20 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
   const graphRef = useRef<Graph<SigmaNodeAttributes, SigmaEdgeAttributes> | null>(null);
   const layoutRef = useRef<FA2Layout | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
+  // Direct neighbours of the selected node (null when nothing in the graph is selected).
+  const selectedNeighborsRef = useRef<Set<string> | null>(null);
+  // Focus mode: with a node selected and a focus depth set, only the nodes in
+  // this set (selection + everything within `focusDepth` hops) are rendered.
+  // Null means no focus — the whole graph renders, dimmed around the selection.
+  const focusSetRef = useRef<Set<string> | null>(null);
+  const focusDepthRef = useRef<number | null>(options.focusDepth ?? null);
+  // Camera state from just before focus mode zoomed in, restored on leaving it.
+  const preFocusCameraRef = useRef<CameraState | null>(null);
   const highlightedRef = useRef<Set<string>>(new Set());
   const blastRadiusRef = useRef<Set<string>>(new Set());
   const animatedNodesRef = useRef<Map<string, NodeAnimation>>(new Map());
   const visibleEdgeTypesRef = useRef<EdgeType[] | null>(null);
+  const useStraightEdgesRef = useRef(false);
 
   // Keep callback refs fresh so the one-time sigma event handlers always
   // call the latest version (avoids stale-closure bugs when graph loads).
@@ -250,8 +337,6 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
   const layoutTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const effectsAnimationFrameRef = useRef<number | null>(null);
   const treeLayoutFrameRef = useRef<number | null>(null);
-  const treeVelocityRef = useRef<Map<string, number>>(new Map()); // vx per node
-  const treeVelocityYRef = useRef<Map<string, number>>(new Map()); // vy per node
   const treeLastTickRef = useRef<number | null>(null);
   const treeAccumulatorRef = useRef(0);
   const treeLayoutStartRef = useRef<number | null>(null);
@@ -259,22 +344,59 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
 
   // Circles layout state (mirrors tree layout state)
   const circlesLayoutFrameRef = useRef<number | null>(null);
-  const circlesVelocityXRef = useRef<Map<string, number>>(new Map());
-  const circlesVelocityYRef = useRef<Map<string, number>>(new Map());
   const circlesLastTickRef = useRef<number | null>(null);
   const circlesAccumulatorRef = useRef(0);
   const circlesLayoutStartRef = useRef<number | null>(null);
   const circlesStableFramesRef = useRef(0);
-  const [isLayoutRunning, setIsLayoutRunning] = useState(false);
+  const [isLayoutRunning, setIsLayoutRunningState] = useState(false);
+  const isLayoutRunningRef = useRef(false);
+  const hideEdgesDuringLayoutRef = useRef(false);
+  // True between setGraph and the layout it starts, so the graph's first paint
+  // already has edges hidden and no second full refresh is needed.
+  const layoutStartingRef = useRef(false);
+  const refreshFrameRef = useRef<number | null>(null);
+  // Stops the detached-FA2 position sync; `true` copies the final positions first.
+  const stopFA2SyncRef = useRef<((finalSync: boolean) => void) | null>(null);
   const [selectedNode, setSelectedNodeState] = useState<string | null>(null);
 
+  const setIsLayoutRunning = useCallback((running: boolean) => {
+    isLayoutRunningRef.current = running;
+    setIsLayoutRunningState(running);
+  }, []);
+
+  // A full refresh re-runs both reducers over the whole graph. One user action
+  // (e.g. clicking a node) used to trigger several of them back to back from
+  // different effects; coalesce them into a single pass on the next frame.
+  const requestRefresh = useCallback(() => {
+    if (refreshFrameRef.current !== null) return;
+    refreshFrameRef.current = requestAnimationFrame(() => {
+      refreshFrameRef.current = null;
+      sigmaRef.current?.refresh();
+    });
+  }, []);
+
   useEffect(() => {
-    highlightedRef.current = options.highlightedNodeIds || new Set();
-    blastRadiusRef.current = options.blastRadiusNodeIds || new Set();
-    animatedNodesRef.current = options.animatedNodes || new Map();
-    visibleEdgeTypesRef.current = options.visibleEdgeTypes || null;
-    sigmaRef.current?.refresh();
+    const highlighted = options.highlightedNodeIds || new Set<string>();
+    const blastRadius = options.blastRadiusNodeIds || new Set<string>();
+    const animated = options.animatedNodes || new Map<string, NodeAnimation>();
+    const visibleEdgeTypes = options.visibleEdgeTypes || null;
+
+    // Upstream state often hands over a new Set with the same members (every
+    // AI tool call does) — only pay for a refresh when something really changed.
+    const unchanged =
+      sameSet(highlightedRef.current, highlighted) &&
+      sameSet(blastRadiusRef.current, blastRadius) &&
+      (animatedNodesRef.current === animated ||
+        (animatedNodesRef.current.size === 0 && animated.size === 0)) &&
+      sameList(visibleEdgeTypesRef.current, visibleEdgeTypes);
+
+    highlightedRef.current = highlighted;
+    blastRadiusRef.current = blastRadius;
+    animatedNodesRef.current = animated;
+    visibleEdgeTypesRef.current = visibleEdgeTypes;
+    if (!unchanged) requestRefresh();
   }, [
+    requestRefresh,
     options.highlightedNodeIds,
     options.blastRadiusNodeIds,
     options.animatedNodes,
@@ -291,12 +413,34 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
       return;
     }
 
-    const animate = () => {
-      sigmaRef.current?.refresh();
+    // Only the animated nodes change between frames, so repaint just those in
+    // place. The effect above queues a full refresh whenever the set changes,
+    // which is what settles their zIndex / highlighted state.
+    let lastPaint = 0;
+    const animate = (timestamp: number) => {
       effectsAnimationFrameRef.current = requestAnimationFrame(animate);
+      if (timestamp - lastPaint < EFFECTS_FRAME_MS) return;
+      lastPaint = timestamp;
+
+      const sigma = sigmaRef.current;
+      const graph = graphRef.current;
+      if (!sigma || !graph) return;
+
+      const nodes: string[] = [];
+      for (const nodeId of animatedNodesRef.current.keys()) {
+        if (graph.hasNode(nodeId)) nodes.push(nodeId);
+      }
+      if (nodes.length === 0) return;
+
+      try {
+        sigma.refresh({ partialGraph: { nodes }, skipIndexation: true });
+      } catch {
+        // Node not indexed yet (graph swapped mid-animation) — fall back to a full pass.
+        sigma.refresh();
+      }
     };
 
-    animate();
+    effectsAnimationFrameRef.current = requestAnimationFrame(animate);
 
     return () => {
       if (effectsAnimationFrameRef.current) {
@@ -306,61 +450,148 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
     };
   }, [options.animatedNodes]);
 
-  const setSelectedNode = useCallback((nodeId: string | null) => {
-    selectedNodeRef.current = nodeId;
-    setSelectedNodeState(nodeId);
+  const updateFocus = useCallback((nodeId: string | null) => {
+    const graph = graphRef.current;
+    const restorePreFocusCamera = () => {
+      const saved = preFocusCameraRef.current;
+      preFocusCameraRef.current = null;
+      if (saved) sigmaRef.current?.getCamera().animate(saved, { duration: 300 });
+    };
 
+    if (nodeId === null || !graph || !graph.hasNode(nodeId)) {
+      selectedNeighborsRef.current = null;
+      focusSetRef.current = null;
+      restorePreFocusCamera();
+      return;
+    }
+    const depth = focusDepthRef.current;
+    selectedNeighborsRef.current = new Set(graph.neighbors(nodeId));
+    focusSetRef.current = depth === null ? null : getNodesWithinHops(graph, nodeId, depth);
+    if (focusSetRef.current) {
+      if (!preFocusCameraRef.current && sigmaRef.current) {
+        preFocusCameraRef.current = sigmaRef.current.getCamera().getState();
+      }
+    } else {
+      restorePreFocusCamera();
+    }
+  }, []);
+
+  // Point the camera at the selection. In focus mode everything outside the
+  // focus set is hidden, so the view is fitted to the whole set — otherwise the
+  // linked nodes can sit off-screen with nothing else on the canvas. Camera
+  // coordinates are Sigma's normalized ones, hence getNodeDisplayData.
+  const frameFocus = useCallback((duration: number) => {
     const sigma = sigmaRef.current;
-    if (!sigma) return;
+    const selected = selectedNodeRef.current;
+    if (!sigma || selected === null) return;
 
-    // Tiny camera nudge to force edge refresh (workaround for Sigma edge caching)
+    const focusSet = focusSetRef.current;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const nodeId of focusSet ?? [selected]) {
+      const display = sigma.getNodeDisplayData(nodeId);
+      if (!display) continue;
+      if (display.x < minX) minX = display.x;
+      if (display.x > maxX) maxX = display.x;
+      if (display.y < minY) minY = display.y;
+      if (display.y > maxY) maxY = display.y;
+    }
+    if (minX === Infinity) return;
+
+    const span = Math.max(maxX - minX, maxY - minY);
+    const target = {
+      x: (minX + maxX) / 2,
+      y: (minY + maxY) / 2,
+      ratio: focusSet ? clamp(span * 1.6, 0.05, 1.3) : 0.15,
+    };
     const camera = sigma.getCamera();
-    const currentRatio = camera.ratio;
-    // Imperceptible zoom change that triggers re-render
-    camera.animate({ ratio: currentRatio * 1.0001 }, { duration: 50 });
-
-    sigma.refresh();
+    if (duration > 0) camera.animate(target, { duration });
+    else camera.setState(target);
   }, []);
 
-  const stopTreeLayout = useCallback((refresh: boolean = false) => {
-    if (treeLayoutFrameRef.current) {
-      cancelAnimationFrame(treeLayoutFrameRef.current);
-      treeLayoutFrameRef.current = null;
-    }
-    treeLastTickRef.current = null;
-    treeAccumulatorRef.current = 0;
-    treeLayoutStartRef.current = null;
-    treeStableFramesRef.current = 0;
-    treeVelocityRef.current.clear();
-    treeVelocityYRef.current.clear();
-    setIsLayoutRunning(false);
+  useEffect(() => {
+    const depth = options.focusDepth ?? null;
+    if (focusDepthRef.current === depth) return;
+    focusDepthRef.current = depth;
+    updateFocus(selectedNodeRef.current);
+    requestRefresh();
+    if (focusSetRef.current) frameFocus(400);
+  }, [options.focusDepth, updateFocus, requestRefresh, frameFocus]);
 
-    if (refresh) {
-      sigmaRef.current?.refresh();
-      // Re-fit camera to the actual settled positions — nodes may have drifted
-      // from their initial anchors during simulation (especially small/leaf nodes).
-      sigmaRef.current?.getCamera().animatedReset({ duration: 600 });
-    }
-  }, []);
+  const setSelectedNode = useCallback(
+    (nodeId: string | null) => {
+      // The click handler and the app-state sync effect both report the same
+      // selection; the second call has nothing left to do.
+      if (selectedNodeRef.current === nodeId) return;
+      const leavingFocus = preFocusCameraRef.current !== null;
+      selectedNodeRef.current = nodeId;
+      updateFocus(nodeId);
+      setSelectedNodeState(nodeId);
 
-  const stopCirclesLayout = useCallback((refresh: boolean = false) => {
-    if (circlesLayoutFrameRef.current) {
-      cancelAnimationFrame(circlesLayoutFrameRef.current);
-      circlesLayoutFrameRef.current = null;
-    }
-    circlesLastTickRef.current = null;
-    circlesAccumulatorRef.current = 0;
-    circlesLayoutStartRef.current = null;
-    circlesStableFramesRef.current = 0;
-    circlesVelocityXRef.current.clear();
-    circlesVelocityYRef.current.clear();
-    setIsLayoutRunning(false);
+      const sigma = sigmaRef.current;
+      if (!sigma) return;
 
-    if (refresh) {
-      sigmaRef.current?.refresh();
-      sigmaRef.current?.getCamera().animatedReset({ duration: 600 });
-    }
-  }, []);
+      if (focusSetRef.current) {
+        frameFocus(400);
+      } else if (!leavingFocus) {
+        // (Leaving focus mode already animates the camera back in updateFocus.)
+        // Tiny camera nudge to force edge refresh (workaround for Sigma edge caching)
+        const camera = sigma.getCamera();
+        const currentRatio = camera.ratio;
+        // Imperceptible zoom change that triggers re-render
+        camera.animate({ ratio: currentRatio * 1.0001 }, { duration: 50 });
+      }
+
+      requestRefresh();
+    },
+    [requestRefresh, updateFocus, frameFocus],
+  );
+
+  const stopTreeLayout = useCallback(
+    (refresh: boolean = false) => {
+      if (treeLayoutFrameRef.current) {
+        cancelAnimationFrame(treeLayoutFrameRef.current);
+        treeLayoutFrameRef.current = null;
+      }
+      treeLastTickRef.current = null;
+      treeAccumulatorRef.current = 0;
+      treeLayoutStartRef.current = null;
+      treeStableFramesRef.current = 0;
+      setIsLayoutRunning(false);
+
+      if (refresh) {
+        sigmaRef.current?.refresh();
+        // Re-fit camera to the actual settled positions — nodes may have drifted
+        // from their initial anchors during simulation (especially small/leaf nodes).
+        if (focusSetRef.current) frameFocus(600);
+        else sigmaRef.current?.getCamera().animatedReset({ duration: 600 });
+      }
+    },
+    [setIsLayoutRunning, frameFocus],
+  );
+
+  const stopCirclesLayout = useCallback(
+    (refresh: boolean = false) => {
+      if (circlesLayoutFrameRef.current) {
+        cancelAnimationFrame(circlesLayoutFrameRef.current);
+        circlesLayoutFrameRef.current = null;
+      }
+      circlesLastTickRef.current = null;
+      circlesAccumulatorRef.current = 0;
+      circlesLayoutStartRef.current = null;
+      circlesStableFramesRef.current = 0;
+      setIsLayoutRunning(false);
+
+      if (refresh) {
+        sigmaRef.current?.refresh();
+        if (focusSetRef.current) frameFocus(600);
+        else sigmaRef.current?.getCamera().animatedReset({ duration: 600 });
+      }
+    },
+    [setIsLayoutRunning, frameFocus],
+  );
 
   const stopAllLayouts = useCallback(
     (refresh: boolean = false) => {
@@ -373,9 +604,15 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
         layoutRef.current.stop();
         layoutRef.current.kill();
         layoutRef.current = null;
+        stopFA2SyncRef.current?.(true);
 
         const graph = graphRef.current;
-        if (graph && options.layoutMode !== 'tree' && options.layoutMode !== 'circles') {
+        if (
+          graph &&
+          graph.order <= NOVERLAP_MAX_NODES &&
+          options.layoutMode !== 'tree' &&
+          options.layoutMode !== 'circles'
+        ) {
           noverlap.assign(graph, NOVERLAP_SETTINGS);
         }
       }
@@ -413,6 +650,7 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
       defaultEdgeType: 'curved',
       edgeProgramClasses: {
         curved: EdgeCurveProgram,
+        line: EdgeRectangleProgram,
       },
 
       // Custom hover renderer - dark background instead of white
@@ -469,7 +707,8 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
       zIndex: true,
 
       nodeReducer: (node, data) => {
-        const res = { ...data };
+        // Sigma passes a shallow copy of the attributes, so mutate it directly.
+        const res = data;
 
         if (data.hidden) {
           res.hidden = true;
@@ -484,6 +723,7 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
         const hasBlastRadius = blastRadius.size > 0;
         const isQueryHighlighted = highlighted.has(node);
         const isBlastRadiusNode = blastRadius.has(node);
+        const showHighlightLabels = highlighted.size + blastRadius.size <= MAX_HIGHLIGHT_LABELS;
 
         // Apply animation effects FIRST (before other highlighting)
         const animation = animatedNodes.get(node);
@@ -527,13 +767,13 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
             res.color = '#ef4444'; // Red for blast radius
             res.size = (data.size || 8) * 1.8;
             res.zIndex = 3;
-            res.highlighted = true;
+            res.highlighted = showHighlightLabels;
           } else if (isQueryHighlighted) {
             // Regular cyan highlight for non-blast-radius nodes
             res.color = '#06b6d4';
             res.size = (data.size || 8) * 1.4;
             res.zIndex = 2;
-            res.highlighted = true;
+            res.highlighted = showHighlightLabels;
           } else {
             res.color = dimColor(data.color, 0.15);
             res.size = (data.size || 8) * 0.4;
@@ -547,7 +787,7 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
             res.color = '#06b6d4';
             res.size = (data.size || 8) * 1.6;
             res.zIndex = 2;
-            res.highlighted = true;
+            res.highlighted = showHighlightLabels;
           } else {
             res.color = dimColor(data.color, 0.2);
             res.size = (data.size || 8) * 0.5;
@@ -556,27 +796,30 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
           return res;
         }
 
-        if (currentSelected) {
-          const graph = graphRef.current;
-          if (graph) {
-            const isSelected = node === currentSelected;
-            const isNeighbor =
-              graph.hasEdge(node, currentSelected) || graph.hasEdge(currentSelected, node);
+        const neighbors = selectedNeighborsRef.current;
+        if (currentSelected && neighbors) {
+          // Focus mode: anything outside the focus set is hidden outright (not
+          // just dimmed), so Sigma skips it in indexing, labels and drawing.
+          const focusSet = focusSetRef.current;
+          if (focusSet && !focusSet.has(node)) {
+            res.hidden = true;
+            return res;
+          }
 
-            if (isSelected) {
-              res.color = data.color;
-              res.size = (data.size || 8) * 1.8;
-              res.zIndex = 2;
-              res.highlighted = true;
-            } else if (isNeighbor) {
-              res.color = data.color;
-              res.size = (data.size || 8) * 1.3;
-              res.zIndex = 1;
-            } else {
-              res.color = dimColor(data.color, 0.25);
-              res.size = (data.size || 8) * 0.6;
-              res.zIndex = 0;
-            }
+          if (node === currentSelected) {
+            res.color = data.color;
+            res.size = (data.size || 8) * 1.8;
+            res.zIndex = 2;
+            res.highlighted = true;
+          } else if (neighbors.has(node)) {
+            res.color = data.color;
+            res.size = (data.size || 8) * 1.3;
+            res.zIndex = 1;
+            res.forceLabel = focusSet !== null && neighbors.size <= FOCUS_FORCE_LABEL_MAX;
+          } else {
+            res.color = dimColor(data.color, 0.25);
+            res.size = (data.size || 8) * 0.6;
+            res.zIndex = 0;
           }
         }
 
@@ -584,7 +827,38 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
       },
 
       edgeReducer: (edge, data) => {
-        const res = { ...data };
+        const res = data;
+
+        const currentSelected = selectedNodeRef.current;
+        const graph = graphRef.current;
+        const hasSelection = currentSelected !== null && selectedNeighborsRef.current !== null;
+        const focusSet = hasSelection ? focusSetRef.current : null;
+        const touchesSelected =
+          hasSelection &&
+          !!graph &&
+          (graph.source(edge) === currentSelected || graph.target(edge) === currentSelected);
+
+        if (focusSet && graph) {
+          // Focus mode. One hop: only the selected node's own edges. Deeper:
+          // every edge whose two ends are both inside the focus set. Either
+          // way it is a small subset, so it stays visible during a layout.
+          const inFocus =
+            focusDepthRef.current === 1
+              ? touchesSelected
+              : focusSet.has(graph.source(edge)) && focusSet.has(graph.target(edge));
+          if (!inFocus) {
+            res.hidden = true;
+            return res;
+          }
+        } else if (
+          hideEdgesDuringLayoutRef.current &&
+          (isLayoutRunningRef.current || layoutStartingRef.current)
+        ) {
+          res.hidden = true;
+          return res;
+        }
+
+        if (useStraightEdgesRef.current) res.type = 'line';
 
         // Check edge type visibility first.
         // HAS_METHOD / HAS_PROPERTY are Kotlin/Java hierarchy edges not in the
@@ -618,15 +892,14 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
           }
         }
 
-        const currentSelected = selectedNodeRef.current;
         const highlighted = highlightedRef.current;
         const blastRadius = blastRadiusRef.current;
         const hasHighlights = highlighted.size > 0 || blastRadius.size > 0; // Check BOTH sets
 
         if (hasHighlights && !currentSelected) {
-          const graph = graphRef.current;
           if (graph) {
-            const [source, target] = graph.extremities(edge);
+            const source = graph.source(edge);
+            const target = graph.target(edge);
 
             // Check if nodes are in EITHER set
             const isSourceActive = highlighted.has(source) || blastRadius.has(source);
@@ -657,21 +930,15 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
           return res;
         }
 
-        if (currentSelected) {
-          const graph = graphRef.current;
-          if (graph) {
-            const [source, target] = graph.extremities(edge);
-            const isConnected = source === currentSelected || target === currentSelected;
-
-            if (isConnected) {
-              res.color = brightenColor(data.color, 1.5);
-              res.size = Math.max(3, (data.size || 1) * 4);
-              res.zIndex = 2;
-            } else {
-              res.color = dimColor(data.color, 0.1);
-              res.size = 0.3;
-              res.zIndex = 0;
-            }
+        if (hasSelection) {
+          if (touchesSelected) {
+            res.color = brightenColor(data.color, 1.5);
+            res.size = Math.max(3, (data.size || 1) * 4);
+            res.zIndex = 2;
+          } else {
+            res.color = dimColor(data.color, 0.1);
+            res.size = 0.3;
+            res.zIndex = 0;
           }
         }
 
@@ -710,18 +977,19 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
         cancelAnimationFrame(treeLayoutFrameRef.current);
         treeLayoutFrameRef.current = null;
       }
-      treeVelocityRef.current.clear();
-      treeVelocityYRef.current.clear();
       if (circlesLayoutFrameRef.current) {
         cancelAnimationFrame(circlesLayoutFrameRef.current);
         circlesLayoutFrameRef.current = null;
       }
-      circlesVelocityXRef.current.clear();
-      circlesVelocityYRef.current.clear();
       if (layoutTimeoutRef.current) {
         clearTimeout(layoutTimeoutRef.current);
       }
       layoutRef.current?.kill();
+      stopFA2SyncRef.current?.(false);
+      if (refreshFrameRef.current !== null) {
+        cancelAnimationFrame(refreshFrameRef.current);
+        refreshFrameRef.current = null;
+      }
       sigma.kill();
       sigmaRef.current = null;
       graphRef.current = null;
@@ -743,8 +1011,6 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
         const ay = attrs.treeAnchorY ?? attrs.y;
         layerYSum.set(layer, (layerYSum.get(layer) ?? 0) + ay);
         layerYCount.set(layer, (layerYCount.get(layer) ?? 0) + 1);
-        treeVelocityRef.current.set(nodeId, 0);
-        treeVelocityYRef.current.set(nodeId, 0);
         graph.setNodeAttribute(nodeId, 'x', attrs.treeAnchorX ?? attrs.x);
         graph.setNodeAttribute(nodeId, 'y', ay);
       });
@@ -789,6 +1055,75 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
       });
 
       setIsLayoutRunning(true);
+      if (hideEdgesDuringLayoutRef.current && !layoutStartingRef.current) {
+        sigmaRef.current?.refresh();
+      }
+      layoutStartingRef.current = false;
+
+      // Flatten the graph into typed arrays once. The simulation below touches
+      // every node and every in-range pair on each sub-step; string-keyed Map
+      // lookups there dominated the frame time. Topology and layer assignment
+      // are fixed for the lifetime of a layout run, so only positions change.
+      const layoutNodeIds = graph.nodes();
+      const nodeTotal = layoutNodeIds.length;
+      const nodeIndex = new Map<string, number>();
+      const posX = new Float64Array(nodeTotal);
+      const posY = new Float64Array(nodeTotal);
+      const velX = new Float64Array(nodeTotal);
+      const velY = new Float64Array(nodeTotal);
+      const forceX = new Float64Array(nodeTotal);
+      const forceY = new Float64Array(nodeTotal);
+      const nodeSize = new Float64Array(nodeTotal);
+      const nodeLayer = new Int32Array(nodeTotal);
+      const nodeCenterY = new Float64Array(nodeTotal);
+      const nodeTargetY = new Float64Array(nodeTotal);
+      const layerMembers = new Map<number, number[]>();
+      for (let i = 0; i < nodeTotal; i++) {
+        const nodeId = layoutNodeIds[i];
+        const attrs = graph.getNodeAttributes(nodeId);
+        const layer = attrs.treeLayer ?? 0;
+        const centerY = layerCenterY.get(layer) ?? attrs.y;
+        nodeIndex.set(nodeId, i);
+        posX[i] = attrs.x;
+        posY[i] = attrs.y;
+        nodeSize[i] = attrs.size ?? 6;
+        nodeLayer[i] = layer;
+        nodeCenterY[i] = centerY;
+        nodeTargetY[i] = centerY + (nodeYBias.get(nodeId) ?? 0) * TREE_LAYER_BAND_HALF;
+        if (!layerMembers.has(layer)) layerMembers.set(layer, []);
+        layerMembers.get(layer)!.push(i);
+      }
+
+      const edgeTotal = graph.size;
+      const edgeSource = new Int32Array(edgeTotal);
+      const edgeTarget = new Int32Array(edgeTotal);
+      const edgeWeight = new Float64Array(edgeTotal);
+      const edgeXWeight = new Float64Array(edgeTotal);
+      const edgeXRest = new Float64Array(edgeTotal);
+      const edgeYRest = new Float64Array(edgeTotal);
+      let edgeCursor = 0;
+      graph.forEachEdge((_edge, edgeAttrs, source, target, sourceAttrs, targetAttrs) => {
+        const rawWeight = TREE_EDGE_WEIGHTS[edgeAttrs.relationType] ?? 0.18;
+        const layerGap = Math.abs((targetAttrs.treeLayer ?? 0) - (sourceAttrs.treeLayer ?? 0));
+        edgeSource[edgeCursor] = nodeIndex.get(source)!;
+        edgeTarget[edgeCursor] = nodeIndex.get(target)!;
+        edgeWeight[edgeCursor] = rawWeight;
+        // Hierarchy edges: zero X rest length so children want to sit directly
+        // under their parent (repulsion then spreads siblings out naturally).
+        // Cross edges: 60 px rest so far-spanning CALLS/IMPORTS edges only
+        // pull when really stretched, and their weight is capped so they
+        // don't override the hierarchy structure.
+        edgeXRest[edgeCursor] = edgeAttrs.isHierarchyEdge ? 0 : 60;
+        edgeXWeight[edgeCursor] = edgeAttrs.isHierarchyEdge ? rawWeight : Math.min(rawWeight, 0.1);
+        edgeYRest[edgeCursor] =
+          (edgeAttrs.isHierarchyEdge ? 70 : 95) + layerGap * (edgeAttrs.isHierarchyEdge ? 28 : 36);
+        edgeCursor++;
+      });
+
+      // Scratch buffers reused by the per-step sorts.
+      const sweepOrder: number[] = new Array(nodeTotal);
+      const spreadScratch: number[] = [];
+      const byPosX = (a: number, b: number) => posX[a] - posX[b];
 
       // Adaptive tuning — mirrors the circles layout strategy.
       // The repulsion pass is O(N × k) after sorting; for large graphs k
@@ -802,6 +1137,7 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
       const treeVelocityCapX = treeIsLarge ? 12 : treeIsMedium ? 6 : 3;
       const treeVelocityCapY = treeIsLarge ? 6 : treeIsMedium ? 3 : 2;
       const treeMaxSimSteps = treeIsLarge ? 1 : 2;
+      let nextRenderAt = 0;
       const treeEffectiveMaxDuration = treeIsLarge
         ? 30000
         : treeIsMedium
@@ -852,22 +1188,14 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
         let activeNodes = 0;
 
         for (let simulationStep = 0; simulationStep < simulationSteps; simulationStep++) {
-          // --- Accumulate forces (recomputed each sub-step from current positions) ---
-          const forceX = new Map<string, number>();
-          const forceY = new Map<string, number>();
-
           // 1. Layer gravity: soft pull toward each node's preferred Y within its band.
           // Directional nodes (above-only or below-only connections) are pulled to the
           // top or bottom of the band; bidirectional / same-layer-only nodes go to
           // the center.  This leaves band edges free for nodes that actually use them.
-          graph.forEachNode((nodeId, attrs) => {
-            const layer = attrs.treeLayer ?? 0;
-            const centerY = layerCenterY.get(layer) ?? attrs.y;
-            const bias = nodeYBias.get(nodeId) ?? 0;
-            const targetY = centerY + bias * TREE_LAYER_BAND_HALF;
-            forceX.set(nodeId, 0);
-            forceY.set(nodeId, (targetY - attrs.y) * TREE_LAYER_GRAVITY * dtScale);
-          });
+          for (let i = 0; i < nodeTotal; i++) {
+            forceX[i] = 0;
+            forceY[i] = (nodeTargetY[i] - posY[i]) * TREE_LAYER_GRAVITY * dtScale;
+          }
 
           // 2. Edge springs — X and Y handled separately.
           //
@@ -878,40 +1206,30 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
           //
           // Fix: compute X spring from |dx| alone.  This keeps full strength
           // regardless of how far apart two nodes are in Y.
-          graph.forEachEdge((edge, edgeAttrs, source, target, sourceAttrs, targetAttrs) => {
-            const dx = targetAttrs.x - sourceAttrs.x;
-            const rawWeight = TREE_EDGE_WEIGHTS[edgeAttrs.relationType] ?? 0.18;
+          for (let e = 0; e < edgeTotal; e++) {
+            const source = edgeSource[e];
+            const target = edgeTarget[e];
+            const dx = posX[target] - posX[source];
 
-            // 2a. Pure X spring.
-            // Hierarchy edges: zero rest length so children want to sit directly
-            // under their parent (repulsion then spreads siblings out naturally).
-            // Cross edges: 60 px rest so far-spanning CALLS/IMPORTS edges only
-            // pull when really stretched, and their weight is capped so they
-            // don't override the hierarchy structure.
-            const xRestLength = edgeAttrs.isHierarchyEdge ? 0 : 60;
-            const xStretch = Math.abs(dx) - xRestLength;
+            // 2a. Pure X spring (rest length / weight precomputed per edge).
+            const xStretch = Math.abs(dx) - edgeXRest[e];
             if (xStretch > 0) {
-              const xWeight = edgeAttrs.isHierarchyEdge ? rawWeight : Math.min(rawWeight, 0.1);
-              const fxX = Math.sign(dx) * xStretch * xWeight * 0.3 * dtScale;
-              forceX.set(source, (forceX.get(source) ?? 0) + fxX);
-              forceX.set(target, (forceX.get(target) ?? 0) - fxX);
+              const fxX = Math.sign(dx) * xStretch * edgeXWeight[e] * 0.3 * dtScale;
+              forceX[source] += fxX;
+              forceX[target] -= fxX;
             }
 
             // 2b. Weak Y spring — layer gravity handles most vertical placement;
             // this just prevents extreme cross-layer stretching.
-            const dy = targetAttrs.y - sourceAttrs.y;
+            const dy = posY[target] - posY[source];
             const distance = Math.sqrt(dx * dx + dy * dy) || 1;
-            const layerGap = Math.abs((targetAttrs.treeLayer ?? 0) - (sourceAttrs.treeLayer ?? 0));
-            const yRestLength =
-              (edgeAttrs.isHierarchyEdge ? 70 : 95) +
-              layerGap * (edgeAttrs.isHierarchyEdge ? 28 : 36);
-            const yStretch = distance - yRestLength;
+            const yStretch = distance - edgeYRest[e];
             if (yStretch > 0) {
-              const fy = (dy / distance) * yStretch * rawWeight * 0.008 * dtScale;
-              forceY.set(source, (forceY.get(source) ?? 0) + fy);
-              forceY.set(target, (forceY.get(target) ?? 0) - fy);
+              const fy = (dy / distance) * yStretch * edgeWeight[e] * 0.008 * dtScale;
+              forceY[source] += fy;
+              forceY[target] -= fy;
             }
-          });
+          }
 
           // 3. Node repulsion in 2D: all pairs within range (cross-layer included)
           // Sort by X for O(n·k) early-exit: once dx > range, all further pairs are too far.
@@ -920,30 +1238,29 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
           // frame take hundreds of ms, leaving the canvas apparently frozen.  Layer gravity
           // and edge springs provide sufficient structure without repulsion.
           if (treeUseRepulsion) {
-            const nodeList = graph.nodes().map((id) => {
-              const a = graph.getNodeAttributes(id);
-              return { id, x: a.x, y: a.y, size: a.size ?? 6, layer: a.treeLayer ?? 0 };
-            });
-            nodeList.sort((a, b) => a.x - b.x);
+            for (let i = 0; i < nodeTotal; i++) sweepOrder[i] = i;
+            sweepOrder.sort(byPosX);
 
-            for (let i = 0; i < nodeList.length; i++) {
-              const nodeA = nodeList[i];
-              for (let j = i + 1; j < nodeList.length; j++) {
-                const nodeB = nodeList[j];
-                const dx = nodeB.x - nodeA.x;
+            for (let i = 0; i < nodeTotal; i++) {
+              const a = sweepOrder[i];
+              const ax = posX[a];
+              const ay = posY[a];
+              for (let j = i + 1; j < nodeTotal; j++) {
+                const b = sweepOrder[j];
+                const dx = posX[b] - ax;
                 if (dx > TREE_REPULSION_RANGE) break; // X-sorted: all further pairs are also too far
 
-                const dy = nodeB.y - nodeA.y;
+                const dy = posY[b] - ay;
                 const dist = Math.sqrt(dx * dx + dy * dy) || 1;
                 if (dist > TREE_REPULSION_RANGE) continue;
 
-                const sameLayer = nodeA.layer === nodeB.layer;
+                const sameLayer = nodeLayer[a] === nodeLayer[b];
                 // Same-layer repulsion reduced from 160→100 so the stronger X spring
                 // (0.30) can now overcome collective repulsion from 3-4 nearby nodes.
                 // Cross-layer kept low (28) so intermediate-layer nodes don't block
                 // parent-child X alignment.
                 const repulsionStrength = sameLayer ? 100 : 28;
-                const minGap = Math.max(28, (nodeA.size + nodeB.size) * 1.8);
+                const minGap = Math.max(28, (nodeSize[a] + nodeSize[b]) * 1.8);
                 let repulsion =
                   (1 / (dist + 8) - 1 / (TREE_REPULSION_RANGE + 8)) * repulsionStrength * dtScale;
                 if (dist < minGap && sameLayer) {
@@ -954,10 +1271,10 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
                 const fx = (dx / dist) * repulsion;
                 const fy = (dy / dist) * repulsion;
 
-                forceX.set(nodeA.id, (forceX.get(nodeA.id) ?? 0) - fx);
-                forceY.set(nodeA.id, (forceY.get(nodeA.id) ?? 0) - fy);
-                forceX.set(nodeB.id, (forceX.get(nodeB.id) ?? 0) + fx);
-                forceY.set(nodeB.id, (forceY.get(nodeB.id) ?? 0) + fy);
+                forceX[a] -= fx;
+                forceY[a] -= fy;
+                forceX[b] += fx;
+                forceY[b] += fy;
               }
             }
           }
@@ -972,24 +1289,17 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
           // Net effect: dense centre spreads outward, sparse edges fill in.
           // Skipped for large graphs — per-layer sort is O(N log N) per frame.
           if (treeUseSpread) {
-            const spreadByLayer = new Map<number, Array<{ id: string; x: number }>>();
-            graph.forEachNode((nodeId, attrs) => {
-              const layer = attrs.treeLayer ?? 0;
-              if (!spreadByLayer.has(layer)) spreadByLayer.set(layer, []);
-              spreadByLayer.get(layer)!.push({ id: nodeId, x: attrs.x });
-            });
-            for (const [, layerNodes] of spreadByLayer) {
-              if (layerNodes.length < 2) continue;
-              layerNodes.sort((a, b) => a.x - b.x);
-              const count = layerNodes.length;
+            for (const members of layerMembers.values()) {
+              const count = members.length;
+              if (count < 2) continue;
+              spreadScratch.length = count;
+              for (let k = 0; k < count; k++) spreadScratch[k] = members[k];
+              spreadScratch.sort(byPosX);
               const spacing = (TREE_MAX_X * 2) / count;
-              for (let i = 0; i < count; i++) {
-                const { id, x } = layerNodes[i];
-                const idealX = -TREE_MAX_X + (i + 0.5) * spacing;
-                forceX.set(
-                  id,
-                  (forceX.get(id) ?? 0) + (idealX - x) * TREE_SPREAD_STRENGTH * dtScale,
-                );
+              for (let k = 0; k < count; k++) {
+                const i = spreadScratch[k];
+                const idealX = -TREE_MAX_X + (k + 0.5) * spacing;
+                forceX[i] += (idealX - posX[i]) * TREE_SPREAD_STRENGTH * dtScale;
               }
             }
           }
@@ -998,25 +1308,22 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
           maxVelocity = 0;
           activeNodes = 0;
 
-          graph.forEachNode((nodeId, attrs) => {
-            const fx = forceX.get(nodeId) ?? 0;
-            const fy = forceY.get(nodeId) ?? 0;
-            const vx0 = treeVelocityRef.current.get(nodeId) ?? 0;
-            const vy0 = treeVelocityYRef.current.get(nodeId) ?? 0;
+          for (let i = 0; i < nodeTotal; i++) {
+            const fx = forceX[i];
+            const fy = forceY[i];
 
             // X boundary resistance: grows as node approaches canvas edge
-            const normX = Math.min(1, Math.abs(attrs.x) / TREE_MAX_X);
+            const normX = Math.min(1, Math.abs(posX[i]) / TREE_MAX_X);
             const resistX = 1 + normX * normX * 4;
 
             // Y boundary resistance: grows as node drifts from its layer band center
-            const layer = attrs.treeLayer ?? 0;
-            const centerY = layerCenterY.get(layer) ?? attrs.y;
-            const yOffset = attrs.y - centerY;
+            const centerY = nodeCenterY[i];
+            const yOffset = posY[i] - centerY;
             const normY = Math.min(1, Math.abs(yOffset) / TREE_LAYER_BAND_HALF);
             const resistY = 1 + normY * normY * TREE_LAYER_BOUNDARY_RESISTANCE;
 
-            const rawVx = (vx0 + fx / resistX) * treeDamping;
-            const rawVy = (vy0 + fy / resistY) * treeDamping;
+            const rawVx = (velX[i] + fx / resistX) * treeDamping;
+            const rawVy = (velY[i] + fy / resistY) * treeDamping;
             const newVx =
               Math.abs(fx) < TREE_FORCE_DEADZONE && Math.abs(rawVx) < TREE_VELOCITY_DEADZONE
                 ? 0
@@ -1026,8 +1333,8 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
                 ? 0
                 : clamp(rawVy, -treeVelocityCapY, treeVelocityCapY);
 
-            treeVelocityRef.current.set(nodeId, newVx);
-            treeVelocityYRef.current.set(nodeId, newVy);
+            velX[i] = newVx;
+            velY[i] = newVy;
 
             const speed = Math.sqrt(newVx * newVx + newVy * newVy);
             totalVelocity += speed;
@@ -1040,20 +1347,36 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
               activeNodes += 1;
             }
 
-            graph.setNodeAttribute(nodeId, 'x', clamp(attrs.x + newVx, -TREE_MAX_X, TREE_MAX_X));
-            graph.setNodeAttribute(
-              nodeId,
-              'y',
-              clamp(
-                attrs.y + newVy,
-                centerY - TREE_LAYER_BAND_HALF,
-                centerY + TREE_LAYER_BAND_HALF,
-              ),
+            posX[i] = clamp(posX[i] + newVx, -TREE_MAX_X, TREE_MAX_X);
+            posY[i] = clamp(
+              posY[i] + newVy,
+              centerY - TREE_LAYER_BAND_HALF,
+              centerY + TREE_LAYER_BAND_HALF,
             );
-          });
+          }
         }
 
-        sigmaRef.current?.refresh();
+        // Publish positions straight onto the node attributes: setNodeAttribute
+        // would emit one graph event (and one reducer pass) per node per axis.
+        // Only positions moved, so the refresh re-reduces nodes and keeps the
+        // cached edge data.
+        for (let i = 0; i < nodeTotal; i++) {
+          const attrs = graph.getNodeAttributes(layoutNodeIds[i]);
+          attrs.x = posX[i];
+          attrs.y = posY[i];
+        }
+        // The simulation is cheap; re-indexing every node and edge for the GPU
+        // is not. Pace repaints by what the last one cost so rendering never
+        // takes more than ~1/3 of the main thread, and the physics keeps
+        // converging (and the UI keeps responding) in between.
+        if (timestamp >= nextRenderAt) {
+          const renderStart = performance.now();
+          sigmaRef.current?.refresh({ partialGraph: { nodes: layoutNodeIds } });
+          // Nothing else is on screen in focus mode — follow the set as it moves.
+          if (focusSetRef.current) frameFocus(0);
+          const renderEnd = performance.now();
+          nextRenderAt = renderEnd + (renderEnd - renderStart) * LAYOUT_RENDER_BACKOFF;
+        }
 
         const averageVelocity = totalVelocity / Math.max(1, graph.order);
         const elapsed = timestamp - (treeLayoutStartRef.current ?? timestamp);
@@ -1082,7 +1405,7 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
 
       treeLayoutFrameRef.current = requestAnimationFrame(step);
     },
-    [stopAllLayouts, stopTreeLayout],
+    [stopAllLayouts, stopTreeLayout, setIsLayoutRunning, frameFocus],
   );
 
   const runCirclesLayout = useCallback(
@@ -1127,6 +1450,7 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
 
       // Fewer simulation sub-steps per rAF tick to keep frames fast for large graphs.
       const maxSimSteps = isLargeGraph ? 1 : 2;
+      let nextRenderAt = 0;
 
       // Tighter per-frame budget for repulsion sweep when range > 0.
       const useAngularSpread = !isLargeGraph;
@@ -1152,11 +1476,76 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
         const ay = attrs.circlesAnchorY ?? attrs.y;
         graph.setNodeAttribute(nodeId, 'x', ax);
         graph.setNodeAttribute(nodeId, 'y', ay);
-        circlesVelocityXRef.current.set(nodeId, 0);
-        circlesVelocityYRef.current.set(nodeId, 0);
       });
 
       setIsLayoutRunning(true);
+      if (hideEdgesDuringLayoutRef.current && !layoutStartingRef.current) {
+        sigmaRef.current?.refresh();
+      }
+      layoutStartingRef.current = false;
+
+      // Typed-array view of the graph — see runTreeLayout for the rationale.
+      const layoutNodeIds = graph.nodes();
+      const nodeTotal = layoutNodeIds.length;
+      const nodeIndex = new Map<string, number>();
+      const posX = new Float64Array(nodeTotal);
+      const posY = new Float64Array(nodeTotal);
+      const velX = new Float64Array(nodeTotal);
+      const velY = new Float64Array(nodeTotal);
+      const forceX = new Float64Array(nodeTotal);
+      const forceY = new Float64Array(nodeTotal);
+      const nodeSize = new Float64Array(nodeTotal);
+      const nodeRing = new Int32Array(nodeTotal);
+      const nodeTargetR = new Float64Array(nodeTotal);
+      const nodeAngle = new Float64Array(nodeTotal);
+      const ringMembers = new Map<number, number[]>();
+      for (let i = 0; i < nodeTotal; i++) {
+        const nodeId = layoutNodeIds[i];
+        const attrs = graph.getNodeAttributes(nodeId);
+        const ring = attrs.circlesRing ?? 0;
+        nodeIndex.set(nodeId, i);
+        posX[i] = attrs.x;
+        posY[i] = attrs.y;
+        nodeSize[i] = attrs.size ?? 6;
+        nodeRing[i] = ring;
+        nodeTargetR[i] = ringTargetR[Math.min(ring, CIRCLES_RING_COUNT - 1)];
+        if (!ringMembers.has(ring)) ringMembers.set(ring, []);
+        ringMembers.get(ring)!.push(i);
+      }
+
+      // Rest length strategy:
+      //   Hierarchy edges (cross-ring): use the radial gap between the two
+      //     ring centres as rest length.  This means the spring only activates
+      //     when nodes are angularly misaligned — it does NOT fight radial
+      //     gravity (which was the main cause of long edges in previous builds).
+      //   Cross edges (same or different ring): rest length = 30 px so the
+      //     spring activates sooner and pulls connected nodes closer.
+      const edgeTotal = graph.size;
+      const edgeSource = new Int32Array(edgeTotal);
+      const edgeTarget = new Int32Array(edgeTotal);
+      const edgeWeight = new Float64Array(edgeTotal);
+      const edgeRest = new Float64Array(edgeTotal);
+      let edgeCursor = 0;
+      graph.forEachEdge((_edge, edgeAttrs, source, target, sourceAttrs, targetAttrs) => {
+        const sourceRing = sourceAttrs.circlesRing ?? 0;
+        const targetRing = targetAttrs.circlesRing ?? 0;
+        edgeSource[edgeCursor] = nodeIndex.get(source)!;
+        edgeTarget[edgeCursor] = nodeIndex.get(target)!;
+        edgeWeight[edgeCursor] = CIRCLES_EDGE_WEIGHTS[edgeAttrs.relationType] ?? 0.2;
+        edgeRest[edgeCursor] = edgeAttrs.isHierarchyEdge
+          ? Math.abs(
+              ringTargetR[Math.min(sourceRing, CIRCLES_RING_COUNT - 1)] -
+                ringTargetR[Math.min(targetRing, CIRCLES_RING_COUNT - 1)],
+            )
+          : 30;
+        edgeCursor++;
+      });
+
+      // Scratch buffers reused by the per-step sorts.
+      const sweepOrder: number[] = new Array(nodeTotal);
+      const spreadScratch: number[] = [];
+      const byPosX = (a: number, b: number) => posX[a] - posX[b];
+      const byAngle = (a: number, b: number) => nodeAngle[a] - nodeAngle[b];
 
       const step = (timestamp: number) => {
         if (!graphRef.current || graphRef.current !== graph) {
@@ -1200,10 +1589,6 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
           maxVelocity = 0;
           activeNodes = 0;
 
-          // --- Accumulate forces (recomputed each sub-step from current positions) ---
-          const forceX = new Map<string, number>();
-          const forceY = new Map<string, number>();
-
           // 1. Radial gravity with soft wall.
           //
           // Base gravity is weak, allowing repulsion to spread nodes radially
@@ -1211,87 +1596,67 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
           // approaches the band edge so nodes never cross into adjacent rings.
           // This replaces the previous hard position clamp, which caused nodes
           // to pile against the boundary instead of distributing within the band.
-          graph.forEachNode((nodeId, attrs) => {
-            const ring = attrs.circlesRing ?? 0;
-            const targetR = ringTargetR[Math.min(ring, CIRCLES_RING_COUNT - 1)];
-            const x = attrs.x;
-            const y = attrs.y;
+          for (let i = 0; i < nodeTotal; i++) {
+            const x = posX[i];
+            const y = posY[i];
             const r = Math.sqrt(x * x + y * y) || 1;
-            const stretch = targetR - r; // positive = node inside ring, negative = outside
+            const stretch = nodeTargetR[i] - r; // positive = node inside ring, negative = outside
             const normR = Math.min(1, Math.abs(stretch) / CIRCLES_BAND_HALF);
             const k =
               CIRCLES_RADIAL_GRAVITY *
               (1 + normR * normR * normR * CIRCLES_RADIAL_BOUNDARY_RESISTANCE);
-            forceX.set(nodeId, (x / r) * stretch * k * dtScale);
-            forceY.set(nodeId, (y / r) * stretch * k * dtScale);
-          });
+            forceX[i] = (x / r) * stretch * k * dtScale;
+            forceY[i] = (y / r) * stretch * k * dtScale;
+          }
 
-          // 2. Edge springs — radial and tangential components.
-          //
-          // Rest length strategy:
-          //   Hierarchy edges (cross-ring): use the radial gap between the two
-          //     ring centres as rest length.  This means the spring only activates
-          //     when nodes are angularly misaligned — it does NOT fight radial
-          //     gravity (which was the main cause of long edges in previous builds).
-          //   Cross edges (same or different ring): rest length = 30 px so the
-          //     spring activates sooner and pulls connected nodes closer.
-          //
-          // Weight cap removed: all edges use their full weight so cross-ring
-          //   CALLS/IMPORTS springs are strong enough to pull nodes into position.
-          graph.forEachEdge((edge, edgeAttrs, source, target, sourceAttrs, targetAttrs) => {
-            const dx = targetAttrs.x - sourceAttrs.x;
-            const dy = targetAttrs.y - sourceAttrs.y;
+          // 2. Edge springs — radial and tangential components (rest length and
+          //    weight precomputed per edge).  All edges use their full weight so
+          //    cross-ring CALLS/IMPORTS springs are strong enough to pull nodes
+          //    into position.
+          for (let e = 0; e < edgeTotal; e++) {
+            const source = edgeSource[e];
+            const target = edgeTarget[e];
+            const dx = posX[target] - posX[source];
+            const dy = posY[target] - posY[source];
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-            const rawWeight = CIRCLES_EDGE_WEIGHTS[edgeAttrs.relationType] ?? 0.2;
-
-            const sourceRing = sourceAttrs.circlesRing ?? 0;
-            const targetRing = targetAttrs.circlesRing ?? 0;
-            const restLength = edgeAttrs.isHierarchyEdge
-              ? Math.abs(
-                  ringTargetR[Math.min(sourceRing, CIRCLES_RING_COUNT - 1)] -
-                    ringTargetR[Math.min(targetRing, CIRCLES_RING_COUNT - 1)],
-                )
-              : 30;
-
-            const stretch = dist - restLength;
+            const stretch = dist - edgeRest[e];
             if (stretch > 0) {
-              const f = stretch * rawWeight * 0.55 * dtScale;
+              const f = stretch * edgeWeight[e] * 0.55 * dtScale;
               const fx = (dx / dist) * f;
               const fy = (dy / dist) * f;
-              forceX.set(source, (forceX.get(source) ?? 0) + fx);
-              forceY.set(source, (forceY.get(source) ?? 0) + fy);
-              forceX.set(target, (forceX.get(target) ?? 0) - fx);
-              forceY.set(target, (forceY.get(target) ?? 0) - fy);
+              forceX[source] += fx;
+              forceY[source] += fy;
+              forceX[target] -= fx;
+              forceY[target] -= fy;
             }
-          });
+          }
 
           // 3. 2D repulsion — skipped for large graphs (effectiveRepulsionRange = 0).
           //    For large graphs, gravity + edge springs are sufficient; the O(n×k)
           //    repulsion sweep is the dominant per-frame cost and not worth the
           //    quality gain when nodes are already tiny.
           if (effectiveRepulsionRange > 0) {
-            const nodeList = graph.nodes().map((id) => {
-              const a = graph.getNodeAttributes(id);
-              return { id, x: a.x, y: a.y, size: a.size ?? 6, ring: a.circlesRing ?? 0 };
-            });
-            nodeList.sort((a, b) => a.x - b.x);
+            for (let i = 0; i < nodeTotal; i++) sweepOrder[i] = i;
+            sweepOrder.sort(byPosX);
 
-            for (let i = 0; i < nodeList.length; i++) {
-              const nodeA = nodeList[i];
-              for (let j = i + 1; j < nodeList.length; j++) {
-                const nodeB = nodeList[j];
-                const dx = nodeB.x - nodeA.x;
+            for (let i = 0; i < nodeTotal; i++) {
+              const a = sweepOrder[i];
+              const ax = posX[a];
+              const ay = posY[a];
+              for (let j = i + 1; j < nodeTotal; j++) {
+                const b = sweepOrder[j];
+                const dx = posX[b] - ax;
                 if (dx > effectiveRepulsionRange) break;
 
-                const dy = nodeB.y - nodeA.y;
+                const dy = posY[b] - ay;
                 const dist2 = dx * dx + dy * dy;
                 const distVal = Math.sqrt(dist2) || 1;
                 if (distVal > effectiveRepulsionRange) continue;
 
-                const sameRing = nodeA.ring === nodeB.ring;
+                const sameRing = nodeRing[a] === nodeRing[b];
                 const repulsionStrength = sameRing ? 100 : 28;
-                const minGap = Math.max(28, (nodeA.size + nodeB.size) * 1.8);
+                const minGap = Math.max(28, (nodeSize[a] + nodeSize[b]) * 1.8);
                 let repulsion =
                   (1 / (distVal + 8) - 1 / (effectiveRepulsionRange + 8)) *
                   repulsionStrength *
@@ -1301,10 +1666,10 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
 
                 const fx = (dx / distVal) * repulsion;
                 const fy = (dy / distVal) * repulsion;
-                forceX.set(nodeA.id, (forceX.get(nodeA.id) ?? 0) - fx);
-                forceY.set(nodeA.id, (forceY.get(nodeA.id) ?? 0) - fy);
-                forceX.set(nodeB.id, (forceX.get(nodeB.id) ?? 0) + fx);
-                forceY.set(nodeB.id, (forceY.get(nodeB.id) ?? 0) + fy);
+                forceX[a] -= fx;
+                forceY[a] -= fy;
+                forceX[b] += fx;
+                forceY[b] += fy;
               }
             }
           }
@@ -1314,29 +1679,22 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
           //    with 15k+ nodes this costs several ms/frame.  For large graphs
           //    edge springs already provide angular clustering.
           if (useAngularSpread) {
-            const spreadByRing = new Map<
-              number,
-              Array<{ id: string; angle: number; x: number; y: number }>
-            >();
-            graph.forEachNode((nodeId, attrs) => {
-              const ring = attrs.circlesRing ?? 0;
-              if (!spreadByRing.has(ring)) spreadByRing.set(ring, []);
-              spreadByRing.get(ring)!.push({
-                id: nodeId,
-                angle: Math.atan2(attrs.y, attrs.x),
-                x: attrs.x,
-                y: attrs.y,
-              });
-            });
-
-            for (const [, ringNodes] of spreadByRing) {
-              if (ringNodes.length < 2) continue;
-              ringNodes.sort((a, b) => a.angle - b.angle);
-              const count = ringNodes.length;
-              for (let i = 0; i < count; i++) {
-                const { id, angle, x, y } = ringNodes[i];
-                const idealAngle = ((i + 0.5) / count) * Math.PI * 2 - Math.PI;
-                let dAngle = idealAngle - angle;
+            for (const members of ringMembers.values()) {
+              const count = members.length;
+              if (count < 2) continue;
+              spreadScratch.length = count;
+              for (let k = 0; k < count; k++) {
+                const i = members[k];
+                spreadScratch[k] = i;
+                nodeAngle[i] = Math.atan2(posY[i], posX[i]);
+              }
+              spreadScratch.sort(byAngle);
+              for (let k = 0; k < count; k++) {
+                const i = spreadScratch[k];
+                const x = posX[i];
+                const y = posY[i];
+                const idealAngle = ((k + 0.5) / count) * Math.PI * 2 - Math.PI;
+                let dAngle = idealAngle - nodeAngle[i];
                 while (dAngle > Math.PI) dAngle -= Math.PI * 2;
                 while (dAngle < -Math.PI) dAngle += Math.PI * 2;
                 const r = Math.sqrt(x * x + y * y) || 1;
@@ -1344,27 +1702,21 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
                 const tx = -y / r;
                 const ty = x / r;
                 const fMag = dAngle * CIRCLES_ANGULAR_SPREAD * dtScale;
-                forceX.set(id, (forceX.get(id) ?? 0) + tx * fMag);
-                forceY.set(id, (forceY.get(id) ?? 0) + ty * fMag);
+                forceX[i] += tx * fMag;
+                forceY[i] += ty * fMag;
               }
             }
           }
 
-          graph.forEachNode((nodeId, attrs) => {
-            const fx = forceX.get(nodeId) ?? 0;
-            const fy = forceY.get(nodeId) ?? 0;
-            const vx0 = circlesVelocityXRef.current.get(nodeId) ?? 0;
-            const vy0 = circlesVelocityYRef.current.get(nodeId) ?? 0;
-
-            const ring = attrs.circlesRing ?? 0;
-            const targetR = ringTargetR[Math.min(ring, CIRCLES_RING_COUNT - 1)];
-            const x = attrs.x;
-            const y = attrs.y;
+          for (let i = 0; i < nodeTotal; i++) {
+            const fx = forceX[i];
+            const fy = forceY[i];
+            const targetR = nodeTargetR[i];
 
             // Soft-wall gravity (force 1) already handles radial boundary
             // enforcement — no separate resistance decomposition needed.
-            const rawVx = (vx0 + fx) * dampingFactor;
-            const rawVy = (vy0 + fy) * dampingFactor;
+            const rawVx = (velX[i] + fx) * dampingFactor;
+            const rawVy = (velY[i] + fy) * dampingFactor;
             const newVx =
               Math.abs(fx) < CIRCLES_FORCE_DEADZONE && Math.abs(rawVx) < CIRCLES_VELOCITY_DEADZONE
                 ? 0
@@ -1374,8 +1726,8 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
                 ? 0
                 : clamp(rawVy, -velocityCap, velocityCap);
 
-            circlesVelocityXRef.current.set(nodeId, newVx);
-            circlesVelocityYRef.current.set(nodeId, newVy);
+            velX[i] = newVx;
+            velY[i] = newVy;
 
             const speed = Math.sqrt(newVx * newVx + newVy * newVy);
             totalVelocity += speed;
@@ -1388,8 +1740,8 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
               activeNodes += 1;
             }
 
-            const newX = x + newVx;
-            const newY = y + newVy;
+            const newX = posX[i] + newVx;
+            const newY = posY[i] + newVy;
             // Wide safety clamp (1.5 × band_half): the soft-wall gravity keeps
             // nodes inside [targetR ± BAND_HALF] naturally.  This catches only
             // extreme numerical edge cases (e.g. very large forces on first frame).
@@ -1398,12 +1750,29 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
             const safeMax = targetR + CIRCLES_BAND_HALF * 1.5;
             const safeR = clamp(newR, safeMin, safeMax);
             const safeScale = safeR / newR;
-            graph.setNodeAttribute(nodeId, 'x', newX * safeScale);
-            graph.setNodeAttribute(nodeId, 'y', newY * safeScale);
-          });
+            posX[i] = newX * safeScale;
+            posY[i] = newY * safeScale;
+          }
         }
 
-        sigmaRef.current?.refresh();
+        // Publish positions without per-node graph events (see runTreeLayout).
+        for (let i = 0; i < nodeTotal; i++) {
+          const attrs = graph.getNodeAttributes(layoutNodeIds[i]);
+          attrs.x = posX[i];
+          attrs.y = posY[i];
+        }
+        // The simulation is cheap; re-indexing every node and edge for the GPU
+        // is not. Pace repaints by what the last one cost so rendering never
+        // takes more than ~1/3 of the main thread, and the physics keeps
+        // converging (and the UI keeps responding) in between.
+        if (timestamp >= nextRenderAt) {
+          const renderStart = performance.now();
+          sigmaRef.current?.refresh({ partialGraph: { nodes: layoutNodeIds } });
+          // Nothing else is on screen in focus mode — follow the set as it moves.
+          if (focusSetRef.current) frameFocus(0);
+          const renderEnd = performance.now();
+          nextRenderAt = renderEnd + (renderEnd - renderStart) * LAYOUT_RENDER_BACKOFF;
+        }
 
         const averageVelocity = totalVelocity / Math.max(1, graph.order);
         const elapsed = timestamp - (circlesLayoutStartRef.current ?? timestamp);
@@ -1432,7 +1801,7 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
 
       circlesLayoutFrameRef.current = requestAnimationFrame(step);
     },
-    [stopAllLayouts, stopCirclesLayout],
+    [stopAllLayouts, stopCirclesLayout, setIsLayoutRunning, frameFocus],
   );
 
   // Run ForceAtlas2 layout
@@ -1448,11 +1817,50 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
       const customSettings = getFA2Settings(nodeCount);
       const settings = { ...inferredSettings, ...customSettings };
 
-      const layout = new FA2Layout(graph, { settings });
+      const detached = nodeCount > DETACHED_FA2_NODE_THRESHOLD;
+      const layoutGraph = detached ? graph.copy() : graph;
+      const layout = new FA2Layout(layoutGraph, { settings });
 
       layoutRef.current = layout;
       layout.start();
       setIsLayoutRunning(true);
+      if (hideEdgesDuringLayoutRef.current && !layoutStartingRef.current) {
+        sigmaRef.current?.refresh();
+      }
+      layoutStartingRef.current = false;
+
+      if (detached) {
+        const nodeIds = graph.nodes();
+        const syncPositions = () => {
+          for (let i = 0; i < nodeIds.length; i++) {
+            const from = layoutGraph.getNodeAttributes(nodeIds[i]);
+            const to = graph.getNodeAttributes(nodeIds[i]);
+            to.x = from.x;
+            to.y = from.y;
+          }
+        };
+
+        let frame: number | null = null;
+        let nextRenderAt = 0;
+        const tick = (timestamp: number) => {
+          frame = requestAnimationFrame(tick);
+          if (timestamp < nextRenderAt || graphRef.current !== graph) return;
+          const renderStart = performance.now();
+          syncPositions();
+          sigmaRef.current?.refresh({ partialGraph: { nodes: nodeIds } });
+          if (focusSetRef.current) frameFocus(0);
+          const renderEnd = performance.now();
+          nextRenderAt = renderEnd + (renderEnd - renderStart) * LAYOUT_RENDER_BACKOFF;
+        };
+        frame = requestAnimationFrame(tick);
+
+        stopFA2SyncRef.current = (finalSync: boolean) => {
+          stopFA2SyncRef.current = null;
+          if (frame !== null) cancelAnimationFrame(frame);
+          frame = null;
+          if (finalSync && graphRef.current === graph) syncPositions();
+        };
+      }
 
       const duration = getLayoutDuration(nodeCount);
 
@@ -1464,16 +1872,18 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
           layoutRef.current.stop();
           layoutRef.current.kill();
           layoutRef.current = null;
+          stopFA2SyncRef.current?.(true);
 
           // Light noverlap cleanup
-          noverlap.assign(graph, NOVERLAP_SETTINGS);
-          sigmaRef.current?.refresh();
-
+          if (graph.order <= NOVERLAP_MAX_NODES) noverlap.assign(graph, NOVERLAP_SETTINGS);
+          // Flag first: the refresh below is what brings hidden edges back.
           setIsLayoutRunning(false);
+          sigmaRef.current?.refresh();
+          if (focusSetRef.current) frameFocus(600);
         }
       }, duration);
     },
-    [stopAllLayouts],
+    [stopAllLayouts, setIsLayoutRunning, frameFocus],
   );
 
   const setGraph = useCallback(
@@ -1484,6 +1894,11 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
       stopAllLayouts(false);
 
       graphRef.current = newGraph;
+      useStraightEdgesRef.current = newGraph.size > STRAIGHT_EDGE_THRESHOLD;
+      hideEdgesDuringLayoutRef.current = newGraph.size > HIDE_EDGES_DURING_LAYOUT_THRESHOLD;
+      sigma.setSetting('hideLabelsOnMove', newGraph.order > HIDE_LABELS_ON_MOVE_NODE_THRESHOLD);
+      layoutStartingRef.current = newGraph.order > 0;
+      preFocusCameraRef.current = null; // belongs to the previous graph
       sigma.setGraph(newGraph);
       setSelectedNode(null);
 
@@ -1507,26 +1922,27 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
     ],
   );
 
-  const focusNode = useCallback((nodeId: string) => {
-    const sigma = sigmaRef.current;
-    const graph = graphRef.current;
-    if (!sigma || !graph || !graph.hasNode(nodeId)) return;
+  const focusNode = useCallback(
+    (nodeId: string) => {
+      const sigma = sigmaRef.current;
+      const graph = graphRef.current;
+      if (!sigma || !graph || !graph.hasNode(nodeId)) return;
 
-    // Skip if already focused on this node (prevents double-click issues)
-    const alreadySelected = selectedNodeRef.current === nodeId;
+      // Skip if already focused on this node (prevents double-click issues)
+      const alreadySelected = selectedNodeRef.current === nodeId;
 
-    // Set selection state directly (without the camera nudge from setSelectedNode)
-    selectedNodeRef.current = nodeId;
-    setSelectedNodeState(nodeId);
+      // Set selection state directly (without the camera nudge from setSelectedNode)
+      selectedNodeRef.current = nodeId;
+      updateFocus(nodeId);
+      setSelectedNodeState(nodeId);
 
-    // Only animate camera if selecting a new node
-    if (!alreadySelected) {
-      const nodeAttrs = graph.getNodeAttributes(nodeId);
-      sigma.getCamera().animate({ x: nodeAttrs.x, y: nodeAttrs.y, ratio: 0.15 }, { duration: 400 });
-    }
+      // Only animate camera if selecting a new node
+      if (!alreadySelected) frameFocus(400);
 
-    sigma.refresh();
-  }, []);
+      requestRefresh();
+    },
+    [requestRefresh, updateFocus, frameFocus],
+  );
 
   const zoomIn = useCallback(() => {
     sigmaRef.current?.getCamera().animatedZoom({ duration: 200 });
@@ -1537,6 +1953,7 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
   }, []);
 
   const resetZoom = useCallback(() => {
+    preFocusCameraRef.current = null; // an explicit fit wins over restoring
     sigmaRef.current?.getCamera().animatedReset({ duration: 300 });
     setSelectedNode(null);
   }, [setSelectedNode]);
@@ -1558,8 +1975,8 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
   }, [stopAllLayouts]);
 
   const refreshHighlights = useCallback(() => {
-    sigmaRef.current?.refresh();
-  }, []);
+    requestRefresh();
+  }, [requestRefresh]);
 
   return {
     containerRef,

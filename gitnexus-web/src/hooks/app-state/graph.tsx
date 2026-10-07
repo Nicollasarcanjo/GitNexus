@@ -46,7 +46,9 @@ export const GraphStateProvider = ({ children }: { children: ReactNode }) => {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [visibleLabels, setVisibleLabels] = useState<NodeLabel[]>(DEFAULT_VISIBLE_LABELS);
   const [visibleEdgeTypes, setVisibleEdgeTypes] = useState<EdgeType[]>(DEFAULT_VISIBLE_EDGES);
-  const [depthFilter, setDepthFilter] = useState<number | null>(null);
+  // Default to one hop: selecting a node shows only it and what it is linked
+  // to. "All" (null) in the Filters panel brings the whole graph back.
+  const [depthFilter, setDepthFilter] = useState<number | null>(1);
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<Set<string>>(new Set());
   const [graphViewMode, setGraphViewMode] = useState<'force' | 'tree' | 'circles'>('force');
   const [graphMode, setGraphMode] = useState<GraphMode>('full');

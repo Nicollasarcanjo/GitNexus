@@ -19,7 +19,7 @@ import {
   knowledgeGraphToGraphology,
   knowledgeGraphToTreeGraphology,
   knowledgeGraphToCirclesGraphology,
-  filterGraphByDepth,
+  filterGraphByLabels,
   SigmaNodeAttributes,
   SigmaEdgeAttributes,
 } from '../lib/graph-adapter';
@@ -153,6 +153,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
     stopLayout,
     selectedNode: sigmaSelectedNode,
     setSelectedNode: setSigmaSelectedNode,
+    refreshHighlights,
   } = useSigma({
     onNodeClick: handleNodeClick,
     onNodeHover: handleNodeHover,
@@ -162,6 +163,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
     animatedNodes: effectiveAnimatedNodes,
     visibleEdgeTypes,
     layoutMode: graphViewMode,
+    focusDepth: depthFilter,
   });
 
   const handleViewModeChange = useCallback(
@@ -236,10 +238,13 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
     const sigmaGraph = sigma.getGraph() as Graph<SigmaNodeAttributes, SigmaEdgeAttributes>;
     if (sigmaGraph.order === 0) return; // Don't filter empty graph
 
-    filterGraphByDepth(sigmaGraph, appSelectedNode?.id || null, depthFilter, visibleLabels);
-    sigma.refresh();
+    // Node-type visibility only. Focus depth around the selection is applied
+    // by useSigma's reducers, which avoids rewriting an attribute on every
+    // node (one graph event each) for every click.
+    filterGraphByLabels(sigmaGraph, visibleLabels);
+    refreshHighlights();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sigmaRef identity never changes
-  }, [graph, graphViewMode, visibleLabels, depthFilter, appSelectedNode]);
+  }, [graph, graphViewMode, visibleLabels]);
 
   // Sync app selected node with sigma
   useEffect(() => {
@@ -314,7 +319,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
       <div
         role="tablist"
         aria-label={t('canvas.viewModes.label')}
-        className="absolute top-4 left-1/2 z-20 flex -translate-x-1/2 gap-1 rounded-lg border border-border-subtle bg-elevated/90 p-1 backdrop-blur-sm"
+        className="absolute top-4 left-1/2 z-20 flex -translate-x-1/2 gap-1 rounded-lg border border-border-subtle bg-elevated p-1"
       >
         <button
           role="tab"
@@ -367,7 +372,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
           project. Chat works normally; offer an explicit "load anyway" escape. */}
       {graphMode === 'chatOnly' && (
         <div className="absolute inset-0 z-20 flex items-center justify-center p-6">
-          <div className="max-w-md rounded-xl border border-border-subtle bg-elevated/95 p-6 text-center shadow-lg backdrop-blur-sm">
+          <div className="max-w-md rounded-xl border border-border-subtle bg-elevated p-6 text-center shadow-lg">
             <h3 className="text-lg font-semibold text-text-primary">
               {t('canvas.chatOnly.title')}
             </h3>
@@ -391,14 +396,14 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
 
       {/* Hovered node tooltip - only show when NOT selected */}
       {hoveredNodeName && !sigmaSelectedNode && (
-        <div className="pointer-events-none absolute top-4 left-1/2 z-20 -translate-x-1/2 animate-fade-in rounded-lg border border-border-subtle bg-elevated/95 px-3 py-1.5 backdrop-blur-sm">
+        <div className="pointer-events-none absolute top-4 left-1/2 z-20 -translate-x-1/2 animate-fade-in rounded-lg border border-border-subtle bg-elevated px-3 py-1.5">
           <span className="font-mono text-sm text-text-primary">{hoveredNodeName}</span>
         </div>
       )}
 
       {/* Selection info bar */}
       {sigmaSelectedNode && appSelectedNode && (
-        <div className="absolute top-4 left-1/2 z-20 flex -translate-x-1/2 animate-slide-up items-center gap-2 rounded-xl border border-accent/30 bg-accent/20 px-4 py-2 backdrop-blur-sm">
+        <div className="absolute top-4 left-1/2 z-20 flex -translate-x-1/2 animate-slide-up items-center gap-2 rounded-xl border border-accent/30 bg-[#2a1d48] px-4 py-2">
           <div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
           <span className="font-mono text-sm text-text-primary">
             {appSelectedNode.properties.name}
@@ -481,7 +486,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
 
       {/* Layout running indicator */}
       {isLayoutRunning && (
-        <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 animate-fade-in items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/20 px-3 py-1.5 backdrop-blur-sm">
+        <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 animate-fade-in items-center gap-2 rounded-full border border-emerald-500/30 bg-[#153733] px-3 py-1.5">
           <div className="h-2 w-2 animate-ping rounded-full bg-emerald-400" />
           <span className="text-xs font-medium text-emerald-400">
             {t('canvas.layoutOptimizing')}

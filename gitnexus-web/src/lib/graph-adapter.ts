@@ -509,6 +509,18 @@ export const knowledgeGraphToCirclesGraphology = (
   return graph;
 };
 
+// Every attribute write emits a graph event that Sigma answers by re-reducing
+// the node. The filters below run on each selection change, so skip writes that
+// would not change anything instead of touching all N nodes per click.
+const setNodeHidden = (
+  graph: Graph<SigmaNodeAttributes, SigmaEdgeAttributes>,
+  nodeId: string,
+  attributes: SigmaNodeAttributes,
+  hidden: boolean,
+): void => {
+  if (Boolean(attributes.hidden) !== hidden) graph.setNodeAttribute(nodeId, 'hidden', hidden);
+};
+
 /**
  * Filter nodes by visibility - sets hidden attribute
  */
@@ -516,9 +528,9 @@ export const filterGraphByLabels = (
   graph: Graph<SigmaNodeAttributes, SigmaEdgeAttributes>,
   visibleLabels: NodeLabel[],
 ): void => {
+  const visible = new Set<NodeLabel>(visibleLabels);
   graph.forEachNode((nodeId, attributes) => {
-    const isVisible = visibleLabels.includes(attributes.nodeType);
-    graph.setNodeAttribute(nodeId, 'hidden', !isVisible);
+    setNodeHidden(graph, nodeId, attributes, !visible.has(attributes.nodeType));
   });
 };
 
@@ -533,8 +545,9 @@ export const getNodesWithinHops = (
   const visited = new Set<string>();
   const queue: { nodeId: string; depth: number }[] = [{ nodeId: startNodeId, depth: 0 }];
 
-  while (queue.length > 0) {
-    const { nodeId, depth } = queue.shift()!;
+  // Index cursor instead of shift(): shift is O(n) and made the BFS quadratic.
+  for (let head = 0; head < queue.length; head++) {
+    const { nodeId, depth } = queue[head];
 
     if (visited.has(nodeId)) continue;
     visited.add(nodeId);
@@ -572,9 +585,10 @@ export const filterGraphByDepth = (
 
   const nodesInRange = getNodesWithinHops(graph, selectedNodeId, maxHops);
 
+  const visible = new Set<NodeLabel>(visibleLabels);
   graph.forEachNode((nodeId, attributes) => {
-    const isLabelVisible = visibleLabels.includes(attributes.nodeType);
+    const isLabelVisible = visible.has(attributes.nodeType);
     const isInRange = nodesInRange.has(nodeId);
-    graph.setNodeAttribute(nodeId, 'hidden', !isLabelVisible || !isInRange);
+    setNodeHidden(graph, nodeId, attributes, !isLabelVisible || !isInRange);
   });
 };
