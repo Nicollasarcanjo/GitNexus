@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Key } from '@/lib/lucide-icons';
 import { useTranslation } from 'react-i18next';
 import { getAuthToken, setAuthToken } from '../services/backend-client';
-import { SecretInput } from './settings/SecretInput';
+import { SecretInput } from './ui/SecretInput';
 
 interface AccessTokenPromptProps {
   /** Called after the token is stored, so the caller can re-probe immediately. */
@@ -17,7 +17,7 @@ interface AccessTokenPromptProps {
  * AUTH_TOKEN_STORAGE_KEY. Nothing here logs it or puts it in a URL.
  */
 export const AccessTokenPrompt = ({ onSubmit }: AccessTokenPromptProps) => {
-  const { t } = useTranslation('settings');
+  const { t } = useTranslation('common');
   const [token, setToken] = useState(getAuthToken);
 
   const handleSubmit = (event: React.FormEvent) => {

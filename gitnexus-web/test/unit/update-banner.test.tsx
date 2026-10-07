@@ -33,10 +33,6 @@ vi.mock('../../src/hooks/useAppState', async () => {
         setChatOnlyNodeCount: vi.fn(),
         setProgress: vi.fn(),
         setProjectName: vi.fn(),
-        setSettingsPanelOpen: vi.fn(),
-        refreshLLMSettings: vi.fn(),
-        initializeAgent: vi.fn(async () => {}),
-        startEmbeddingsWithFallback: vi.fn(),
         setAvailableRepos: vi.fn(),
         switchRepo: vi.fn(async () => {}),
         setCurrentRepo: vi.fn(),
@@ -53,7 +49,6 @@ vi.mock('../../src/hooks/useAppState', async () => {
                 ? { phase: 'extracting', percent: 1, message: 'Loading' }
                 : null,
             isRightPanelOpen: false,
-            isSettingsPanelOpen: false,
             codeReferences: [],
             selectedNode: null,
             isCodePanelOpen: false,
@@ -106,14 +101,10 @@ vi.mock('../../src/components/GraphCanvas', async () => {
   return { GraphCanvas: React.forwardRef(() => <div>Graph</div>) };
 });
 vi.mock('../../src/components/RightPanel', () => ({ RightPanel: () => null }));
-vi.mock('../../src/components/SettingsPanel', () => ({ SettingsPanel: () => null }));
 vi.mock('../../src/components/StatusBar', () => ({ StatusBar: () => null }));
 vi.mock('../../src/components/FileTreePanel', () => ({ FileTreePanel: () => null }));
 vi.mock('../../src/components/CodeReferencesPanel', () => ({
   CodeReferencesPanel: () => null,
-}));
-vi.mock('../../src/core/llm/settings-service', () => ({
-  getActiveProviderConfig: () => null,
 }));
 
 vi.mock('../../src/services/backend-client', async (importOriginal) => {

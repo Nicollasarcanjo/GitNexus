@@ -17,13 +17,20 @@ if (insecureE2E) {
   launchArgs.unshift('--disable-web-security', '--disable-site-isolation-trials');
 }
 
+const baseURL = process.env.FRONTEND_URL || 'http://localhost:5173';
+
 export default defineConfig({
   testDir: './e2e',
   testIgnore: ['**/manual-record.spec.ts', '**/debug-issues.spec.ts'],
   timeout: 60_000,
   retries: process.env.CI ? 1 : 0,
   use: {
-    baseURL: process.env.FRONTEND_URL || 'http://localhost:5173',
+    baseURL,
+    // The app opens in pt-BR by default; the specs assert on English copy.
+    storageState: {
+      cookies: [],
+      origins: [{ origin: baseURL, localStorage: [{ name: 'gitnexus.lng', value: 'en' }] }],
+    },
     trace: 'retain-on-failure',
     screenshot: 'retain-on-failure',
     video: 'retain-on-failure',

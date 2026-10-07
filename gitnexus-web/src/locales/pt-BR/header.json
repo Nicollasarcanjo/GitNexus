@@ -10,8 +10,6 @@
   "noRepositoriesFound": "Nenhum repositório encontrado para \"{{query}}\"",
   "searchNodes": "Buscar nós...",
   "noNodesFound": "Nenhum nó encontrado para \"{{query}}\"",
-  "aiSettings": "Configurações de IA",
-  "help": "Ajuda",
   "language": "Idioma",
   "selectLanguage": "Selecionar idioma"
 }

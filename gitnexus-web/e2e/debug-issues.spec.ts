@@ -27,8 +27,7 @@ debugTest('debug: process view Reset View button', async ({ page }, testInfo) =>
   await connectToServer(page);
 
   // Open Processes tab
-  await page.getByRole('button', { name: 'Nexus AI' }).click();
-  await page.getByText('Processes').click();
+  await page.getByRole('button', { name: 'Flows' }).click();
   await expect(page.getByText(/\d+ processes detected/)).toBeVisible({ timeout: 10_000 });
 
   // Click View on the first Cross-Community process

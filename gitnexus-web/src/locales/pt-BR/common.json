@@ -1,7 +1,6 @@
 {
   "app": {
-    "name": "GitNexus",
-    "nexusAI": "Nexus AI"
+    "name": "GitNexus"
   },
   "updateBanner": "GitNexus {{latest}} está disponível — este servidor roda a {{installed}}.",
   "updateBannerDismiss": "Dispensar aviso de atualização",
@@ -20,11 +19,6 @@
     "focusInGraph": "Focar no grafo",
     "expand": "Expandir",
     "collapse": "Recolher"
-  },
-  "chat": {
-    "viewNodeInCodePanel": "Ver {{inner}} no painel de código",
-    "openInCodePanel": "Abrir no painel de código • {{inner}}",
-    "waitForVectorIndex": "Aguarde um momento, o índice vetorial está sendo criado."
   },
   "counts": {
     "files_one": "{{count}} arquivo",
@@ -89,5 +83,15 @@
   "units": {
     "elapsedSeconds": "{{seconds}}s",
     "elapsedMinutesSeconds": "{{minutes}}m {{seconds}}s"
+  },
+  "accessToken": {
+    "label": "Token de acesso",
+    "placeholder": "Cole o token de acesso da instalação",
+    "title": "Esta instalação exige um token de acesso",
+    "promptHint": "O servidor GitNexus está rodando, mas protegido. O token fica na variável de ambiente GITNEXUS_SERVE_AUTH_TOKEN do serviço gitnexus-web.",
+    "connect": "Conectar",
+    "reveal": "Mostrar token de acesso",
+    "hide": "Ocultar token de acesso",
+    "sessionNote": "Guardado apenas nesta sessão do navegador. Será preciso informar de novo em outra aba ou depois de fechar o navegador."
   }
 }

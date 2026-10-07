@@ -1,7 +1,6 @@
 {
   "app": {
-    "name": "GitNexus",
-    "nexusAI": "Nexus AI"
+    "name": "GitNexus"
   },
   "updateBanner": "GitNexus {{latest}} is available — this server runs {{installed}}.",
   "updateBannerDismiss": "Dismiss update notification",
@@ -20,11 +19,6 @@
     "focusInGraph": "Focus in graph",
     "expand": "Expand",
     "collapse": "Collapse"
-  },
-  "chat": {
-    "viewNodeInCodePanel": "View {{inner}} in Code panel",
-    "openInCodePanel": "Open in Code panel • {{inner}}",
-    "waitForVectorIndex": "Wait a moment, vector index is being created."
   },
   "counts": {
     "files_one": "{{count}} file",
@@ -84,5 +78,15 @@
   "units": {
     "elapsedSeconds": "{{seconds}}s",
     "elapsedMinutesSeconds": "{{minutes}}m {{seconds}}s"
+  },
+  "accessToken": {
+    "label": "Access Token",
+    "placeholder": "Paste your deploy access token",
+    "title": "This deploy requires an access token",
+    "promptHint": "The GitNexus server is running but gated. Find the token in your Render dashboard under the gitnexus-web service's GITNEXUS_SERVE_AUTH_TOKEN environment variable.",
+    "connect": "Connect",
+    "reveal": "Show access token",
+    "hide": "Hide access token",
+    "sessionNote": "Stored for this browser session only. You will re-enter it in a new tab or after closing the browser."
   }
 }

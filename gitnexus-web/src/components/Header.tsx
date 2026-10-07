@@ -1,8 +1,7 @@
 import {
   Search,
-  Settings,
-  HelpCircle,
   Sparkles,
+  GitBranch,
   FolderOpen,
   ChevronDown,
   Trash2,
@@ -22,7 +21,6 @@ import {
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GraphNode } from 'gitnexus-shared';
-import { EmbeddingStatus } from './EmbeddingStatus';
 import { RepoAnalyzer } from './RepoAnalyzer';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { translateProgressMessage } from '../i18n/progress';
@@ -58,18 +56,9 @@ export const Header = ({
   onAnalyzeComplete,
   onReposChanged,
 }: HeaderProps) => {
-  const { t } = useTranslation(['common', 'header', 'errors']);
-  const {
-    projectName,
-    currentRepo,
-    graph,
-    graphMode,
-    openChatPanel,
-    isRightPanelOpen,
-    rightPanelTab,
-    setSettingsPanelOpen,
-    setHelpDialogBoxOpen,
-  } = useAppState();
+  const { t } = useTranslation(['common', 'header', 'errors', 'graph']);
+  const { projectName, currentRepo, graph, graphMode, isRightPanelOpen, setRightPanelOpen } =
+    useAppState();
   const [searchQuery, setSearchQuery] = useState('');
   const [repoSearchQuery, setRepoSearchQuery] = useState('');
   const [isRepoDropdownOpen, setIsRepoDropdownOpen] = useState(false);
@@ -535,38 +524,20 @@ export const Header = ({
           </div>
         )}
 
-        {/* Embedding Status */}
-        <EmbeddingStatus />
-
         <LanguageSwitcher />
 
-        {/* Icon buttons */}
+        {/* Execution flows panel */}
         <button
-          onClick={() => setSettingsPanelOpen(true)}
-          className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
-          title={t('header:aiSettings')}
+          onClick={() => setRightPanelOpen(!isRightPanelOpen)}
+          aria-pressed={isRightPanelOpen}
+          className={`flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition-colors ${
+            isRightPanelOpen
+              ? 'border-accent bg-accent text-white'
+              : 'border-border-subtle bg-surface text-text-secondary hover:bg-hover hover:text-text-primary'
+          }`}
         >
-          <Settings className="h-4.5 w-4.5" />
-        </button>
-        <button
-          title={t('header:help')}
-          onClick={() => setHelpDialogBoxOpen(true)}
-          className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
-        >
-          <HelpCircle className="h-4.5 w-4.5" />
-        </button>
-
-        {/* AI Button */}
-        <button
-          onClick={openChatPanel}
-          className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-all ${
-            isRightPanelOpen && rightPanelTab === 'chat'
-              ? 'bg-accent text-white shadow-glow'
-              : 'bg-gradient-to-r from-accent to-accent-dim text-white shadow-glow hover:-translate-y-0.5 hover:shadow-lg'
-          } `}
-        >
-          <Sparkles className="h-4 w-4" />
-          <span>{t('common:app.nexusAI')}</span>
+          <GitBranch className="h-4 w-4" />
+          <span>{t('graph:processes.togglePanel')}</span>
         </button>
       </div>
     </header>

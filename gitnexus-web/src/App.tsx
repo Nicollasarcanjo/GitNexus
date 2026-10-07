@@ -5,12 +5,10 @@ import { LoadingOverlay } from './components/LoadingOverlay';
 import { Header } from './components/Header';
 import { GraphCanvas, GraphCanvasHandle } from './components/GraphCanvas';
 import { RightPanel } from './components/RightPanel';
-import { SettingsPanel } from './components/SettingsPanel';
 import { StatusBar } from './components/StatusBar';
 import { FileTreePanel } from './components/FileTreePanel';
 import { CodeReferencesPanel } from './components/CodeReferencesPanel';
 import { ExecutionDashboard } from './components/ExecutionDashboard';
-import { getActiveProviderConfig } from './core/llm/settings-service';
 import { buildGraphFromConnectResult } from './lib/apply-connect-result';
 import {
   connectToServer,
@@ -63,11 +61,6 @@ const AppContent = () => {
     setProjectName,
     progress,
     isRightPanelOpen,
-    isSettingsPanelOpen,
-    setSettingsPanelOpen,
-    refreshLLMSettings,
-    initializeAgent,
-    startEmbeddingsWithFallback,
     codeReferences,
     selectedNode,
     isCodePanelOpen,
@@ -159,28 +152,8 @@ const AppContent = () => {
 
       // Transition directly to exploring view
       setViewMode('exploring');
-
-      // Initialize agent with backend queries, then start embeddings. Pass the
-      // chat-only flag so the agent's prompt matches the loaded/skipped graph (#2178).
-      try {
-        if (getActiveProviderConfig()) {
-          await initializeAgent(projectName, { chatOnly: result.graphSkipped, repo: repoIdentity });
-        }
-        startEmbeddingsWithFallback();
-      } catch (err) {
-        console.warn('Failed to initialize agent:', err);
-      }
     },
-    [
-      setViewMode,
-      setGraph,
-      setGraphMode,
-      setChatOnlyNodeCount,
-      setProjectName,
-      setCurrentRepo,
-      initializeAgent,
-      startEmbeddingsWithFallback,
-    ],
+    [setViewMode, setGraph, setGraphMode, setChatOnlyNodeCount, setProjectName, setCurrentRepo],
   );
 
   // Auto-connect when a ?server, ?repo or ?project query param is present
@@ -291,13 +264,6 @@ const AppContent = () => {
   const handleFocusNode = useCallback((nodeId: string) => {
     graphCanvasRef.current?.focusNode(nodeId);
   }, []);
-
-  // Handle settings saved - refresh and reinitialize agent
-  // NOTE: Must be defined BEFORE any conditional returns (React hooks rule)
-  const handleSettingsSaved = useCallback(() => {
-    refreshLLMSettings();
-    initializeAgent();
-  }, [refreshLLMSettings, initializeAgent]);
 
   // While exploring, re-read server info on a slow cadence so an update the
   // server discovers after page load surfaces without a manual reload.
@@ -420,7 +386,7 @@ const AppContent = () => {
           )}
         </div>
 
-        {/* Right Panel - Code & Chat (tabbed) */}
+        {/* Right panel - execution flows */}
         {isRightPanelOpen && <RightPanel />}
       </main>
 
@@ -459,13 +425,6 @@ const AppContent = () => {
             </button>
           </div>
         )}
-
-      {/* Settings Panel (modal) */}
-      <SettingsPanel
-        isOpen={isSettingsPanelOpen}
-        onClose={() => setSettingsPanelOpen(false)}
-        onSettingsSaved={handleSettingsSaved}
-      />
     </div>
   );
 };

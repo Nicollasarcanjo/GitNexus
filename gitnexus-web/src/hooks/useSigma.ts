@@ -8,7 +8,6 @@ import EdgeCurveProgram from '@sigma/edge-curve';
 import { EdgeRectangleProgram } from 'sigma/rendering';
 import type { CameraState } from 'sigma/types';
 import { SigmaNodeAttributes, SigmaEdgeAttributes, getNodesWithinHops } from '../lib/graph-adapter';
-import type { NodeAnimation } from './useAppState';
 import type { EdgeType } from '../lib/constants';
 // Helper: Parse hex color to RGB
 const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
@@ -85,7 +84,6 @@ interface UseSigmaOptions {
   onStageClick?: () => void;
   highlightedNodeIds?: Set<string>;
   blastRadiusNodeIds?: Set<string>;
-  animatedNodes?: Map<string, NodeAnimation>;
   visibleEdgeTypes?: EdgeType[];
   layoutMode?: 'force' | 'tree' | 'circles';
   /**
@@ -198,8 +196,6 @@ const sameList = <T>(a: T[] | null, b: T[] | null): boolean => {
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
 };
-// Node effects (pulse / ripple / glow) repaint at this rate instead of every frame.
-const EFFECTS_FRAME_MS = 33;
 // Tree / circles layouts wait this many multiples of the last repaint's cost
 // before repainting again.
 const LAYOUT_RENDER_BACKOFF = 2;
@@ -344,7 +340,6 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
   const preFocusCameraRef = useRef<CameraState | null>(null);
   const highlightedRef = useRef<Set<string>>(new Set());
   const blastRadiusRef = useRef<Set<string>>(new Set());
-  const animatedNodesRef = useRef<Map<string, NodeAnimation>>(new Map());
   const visibleEdgeTypesRef = useRef<EdgeType[] | null>(null);
   const useStraightEdgesRef = useRef(false);
 
@@ -357,7 +352,6 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
   onNodeHoverRef.current = options.onNodeHover;
   onStageClickRef.current = options.onStageClick;
   const layoutTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const effectsAnimationFrameRef = useRef<number | null>(null);
   const treeLayoutFrameRef = useRef<number | null>(null);
   const treeLastTickRef = useRef<number | null>(null);
   const treeAccumulatorRef = useRef(0);
@@ -400,7 +394,6 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
   useEffect(() => {
     const highlighted = options.highlightedNodeIds || new Set<string>();
     const blastRadius = options.blastRadiusNodeIds || new Set<string>();
-    const animated = options.animatedNodes || new Map<string, NodeAnimation>();
     const visibleEdgeTypes = options.visibleEdgeTypes || null;
 
     // Upstream state often hands over a new Set with the same members (every
@@ -408,69 +401,18 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
     const unchanged =
       sameSet(highlightedRef.current, highlighted) &&
       sameSet(blastRadiusRef.current, blastRadius) &&
-      (animatedNodesRef.current === animated ||
-        (animatedNodesRef.current.size === 0 && animated.size === 0)) &&
       sameList(visibleEdgeTypesRef.current, visibleEdgeTypes);
 
     highlightedRef.current = highlighted;
     blastRadiusRef.current = blastRadius;
-    animatedNodesRef.current = animated;
     visibleEdgeTypesRef.current = visibleEdgeTypes;
     if (!unchanged) requestRefresh();
   }, [
     requestRefresh,
     options.highlightedNodeIds,
     options.blastRadiusNodeIds,
-    options.animatedNodes,
     options.visibleEdgeTypes,
   ]);
-
-  // Animation loop for node effects
-  useEffect(() => {
-    if (!options.animatedNodes || options.animatedNodes.size === 0) {
-      if (effectsAnimationFrameRef.current) {
-        cancelAnimationFrame(effectsAnimationFrameRef.current);
-        effectsAnimationFrameRef.current = null;
-      }
-      return;
-    }
-
-    // Only the animated nodes change between frames, so repaint just those in
-    // place. The effect above queues a full refresh whenever the set changes,
-    // which is what settles their zIndex / highlighted state.
-    let lastPaint = 0;
-    const animate = (timestamp: number) => {
-      effectsAnimationFrameRef.current = requestAnimationFrame(animate);
-      if (timestamp - lastPaint < EFFECTS_FRAME_MS) return;
-      lastPaint = timestamp;
-
-      const sigma = sigmaRef.current;
-      const graph = graphRef.current;
-      if (!sigma || !graph) return;
-
-      const nodes: string[] = [];
-      for (const nodeId of animatedNodesRef.current.keys()) {
-        if (graph.hasNode(nodeId)) nodes.push(nodeId);
-      }
-      if (nodes.length === 0) return;
-
-      try {
-        sigma.refresh({ partialGraph: { nodes }, skipIndexation: true });
-      } catch {
-        // Node not indexed yet (graph swapped mid-animation) — fall back to a full pass.
-        sigma.refresh();
-      }
-    };
-
-    effectsAnimationFrameRef.current = requestAnimationFrame(animate);
-
-    return () => {
-      if (effectsAnimationFrameRef.current) {
-        cancelAnimationFrame(effectsAnimationFrameRef.current);
-        effectsAnimationFrameRef.current = null;
-      }
-    };
-  }, [options.animatedNodes]);
 
   const updateFocus = useCallback((nodeId: string | null) => {
     const graph = graphRef.current;
@@ -751,48 +693,11 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
         const currentSelected = selectedNodeRef.current;
         const highlighted = highlightedRef.current;
         const blastRadius = blastRadiusRef.current;
-        const animatedNodes = animatedNodesRef.current;
         const hasHighlights = highlighted.size > 0;
         const hasBlastRadius = blastRadius.size > 0;
         const isQueryHighlighted = highlighted.has(node);
         const isBlastRadiusNode = blastRadius.has(node);
         const showHighlightLabels = highlighted.size + blastRadius.size <= MAX_HIGHLIGHT_LABELS;
-
-        // Apply animation effects FIRST (before other highlighting)
-        const animation = animatedNodes.get(node);
-        if (animation) {
-          const now = Date.now();
-          const elapsed = now - animation.startTime;
-          const progress = Math.min(elapsed / animation.duration, 1);
-
-          // Calculate animation phase (0-1-0-1... oscillation)
-          const phase = (Math.sin(progress * Math.PI * 4) + 1) / 2;
-
-          if (animation.type === 'pulse') {
-            // Cyan pulse for search results
-            const sizeMultiplier = 1.5 + phase * 0.8;
-            res.size = (data.size || 8) * sizeMultiplier;
-            res.color = phase > 0.5 ? '#06b6d4' : brightenColor('#06b6d4', 1.3);
-            res.zIndex = 5;
-            res.highlighted = true;
-          } else if (animation.type === 'ripple') {
-            // Red ripple for blast radius
-            const sizeMultiplier = 1.3 + phase * 1.2;
-            res.size = (data.size || 8) * sizeMultiplier;
-            res.color = phase > 0.5 ? '#ef4444' : '#f87171';
-            res.zIndex = 5;
-            res.highlighted = true;
-          } else if (animation.type === 'glow') {
-            // Purple glow for highlight
-            const sizeMultiplier = 1.4 + phase * 0.6;
-            res.size = (data.size || 8) * sizeMultiplier;
-            res.color = phase > 0.5 ? '#a855f7' : '#c084fc';
-            res.zIndex = 5;
-            res.highlighted = true;
-          }
-
-          return res;
-        }
 
         // Blast radius takes priority (red highlighting)
         if (hasBlastRadius && !currentSelected) {

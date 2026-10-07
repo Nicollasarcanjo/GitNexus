@@ -5,8 +5,6 @@ import {
   Maximize2,
   Focus,
   RotateCcw,
-  Lightbulb,
-  LightbulbOff,
   Network,
   GitBranch,
   Target,
@@ -43,16 +41,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
     openCodePanel,
     depthFilter,
     highlightedNodeIds,
-    setHighlightedNodeIds,
-    aiCitationHighlightedNodeIds,
-    aiToolHighlightedNodeIds,
     blastRadiusNodeIds,
-    isAIHighlightsEnabled,
-    toggleAIHighlights,
-    clearAIToolHighlights,
-    clearAICitationHighlights,
-    clearBlastRadius,
-    animatedNodes,
     graphViewMode,
     setGraphViewMode,
     graphMode,
@@ -60,32 +49,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
     loadGraphAnyway,
   } = useAppState();
   const [hoveredNodeName, setHoveredNodeName] = useState<string | null>(null);
-
-  const effectiveHighlightedNodeIds = useMemo(() => {
-    if (!isAIHighlightsEnabled) return highlightedNodeIds;
-    const next = new Set(highlightedNodeIds);
-    for (const id of aiCitationHighlightedNodeIds) next.add(id);
-    for (const id of aiToolHighlightedNodeIds) next.add(id);
-    // Note: blast radius nodes are handled separately with red color
-    return next;
-  }, [
-    highlightedNodeIds,
-    aiCitationHighlightedNodeIds,
-    aiToolHighlightedNodeIds,
-    isAIHighlightsEnabled,
-  ]);
-
-  // Blast radius nodes (only when AI highlights enabled)
-  const effectiveBlastRadiusNodeIds = useMemo(() => {
-    if (!isAIHighlightsEnabled) return new Set<string>();
-    return blastRadiusNodeIds;
-  }, [blastRadiusNodeIds, isAIHighlightsEnabled]);
-
-  // Animated nodes (only when AI highlights enabled)
-  const effectiveAnimatedNodes = useMemo(() => {
-    if (!isAIHighlightsEnabled) return new Map();
-    return animatedNodes;
-  }, [animatedNodes, isAIHighlightsEnabled]);
 
   const nodeById = useMemo(() => {
     if (!graph) return new Map<string, GraphNode>();
@@ -120,24 +83,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
     setSelectedNode(null);
   }, [setSelectedNode]);
 
-  const handleToggleAIHighlights = useCallback(() => {
-    if (isAIHighlightsEnabled) {
-      clearAIToolHighlights();
-      clearAICitationHighlights();
-      clearBlastRadius();
-      setSelectedNode(null);
-      setSigmaSelectedNode(null);
-    }
-    toggleAIHighlights();
-  }, [
-    isAIHighlightsEnabled,
-    clearAIToolHighlights,
-    clearAICitationHighlights,
-    clearBlastRadius,
-    setSelectedNode,
-    toggleAIHighlights,
-  ]);
-
   const {
     containerRef,
     sigmaRef,
@@ -154,9 +99,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
     onNodeClick: handleNodeClick,
     onNodeHover: handleNodeHover,
     onStageClick: handleStageClick,
-    highlightedNodeIds: effectiveHighlightedNodeIds,
-    blastRadiusNodeIds: effectiveBlastRadiusNodeIds,
-    animatedNodes: effectiveAnimatedNodes,
+    highlightedNodeIds,
+    blastRadiusNodeIds,
     visibleEdgeTypes,
     layoutMode: graphViewMode,
     focusDepth: depthFilter,
@@ -379,7 +323,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
                   })
                 : t('canvas.chatOnly.description')}
             </p>
-            <p className="mt-2 text-xs text-text-muted">{t('canvas.chatOnly.citationNote')}</p>
             <button
               onClick={handleLoadGraphAnyway}
               className="mt-4 rounded-md border border-accent/30 bg-accent/20 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/30"
@@ -476,28 +419,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
 
       {/* Query FAB */}
       <QueryFAB />
-
-      {/* AI Highlights toggle - Top Right */}
-      <div className="absolute top-4 right-4 z-20">
-        <button
-          onClick={handleToggleAIHighlights}
-          className={
-            isAIHighlightsEnabled
-              ? 'flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-400/40 bg-cyan-500/15 text-cyan-200 transition-colors hover:border-cyan-300/60 hover:bg-cyan-500/20'
-              : 'flex h-10 w-10 items-center justify-center rounded-lg border border-border-subtle bg-elevated text-text-muted transition-colors hover:bg-hover hover:text-text-primary'
-          }
-          title={
-            isAIHighlightsEnabled ? t('canvas.turnOffHighlights') : t('canvas.turnOnHighlights')
-          }
-          data-testid="ai-highlights-toggle"
-        >
-          {isAIHighlightsEnabled ? (
-            <Lightbulb className="h-4 w-4" />
-          ) : (
-            <LightbulbOff className="h-4 w-4" />
-          )}
-        </button>
-      </div>
     </div>
   );
 });

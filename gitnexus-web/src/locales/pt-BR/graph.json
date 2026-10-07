@@ -2,55 +2,6 @@
   "loading": {
     "filesProgress": "{{processed}} / {{total}} arquivos"
   },
-  "toolCall": {
-    "status": {
-      "running": "executando",
-      "completed": "concluído",
-      "error": "erro",
-      "stopped": "interrompido"
-    },
-    "tools": {
-      "search": "🔍 Buscar código",
-      "cypher": "🔗 Consulta Cypher",
-      "grep": "🔎 Busca por padrão",
-      "read": "📄 Ler arquivo",
-      "overview": "🗺️ Visão geral do código",
-      "explore": "🔬 Análise detalhada",
-      "impact": "💥 Análise de impacto"
-    },
-    "query": "Consulta",
-    "input": "Entrada",
-    "result": "Resultado",
-    "searchPrefix": "Busca: \"{{query}}\""
-  },
-  "embedding": {
-    "generateTitle": "Gerar embeddings para busca semântica",
-    "enable": "Ativar busca semântica",
-    "loadingModel": "Carregando modelo de IA...",
-    "embeddingNodes": "Gerando embeddings: {{processed}}/{{total}} nós",
-    "creatingIndex": "Criando índice vetorial...",
-    "readyTitle": "A busca semântica está pronta! Use linguagem natural no chat de IA.",
-    "ready": "Semântica pronta",
-    "errorTitle": "A geração de embeddings falhou. Clique para tentar de novo.",
-    "failedRetry": "Falhou - Tentar de novo",
-    "fallback": {
-      "title": "O WebGPU disse \"não\"",
-      "subtitle": "Seu navegador não suporta aceleração por GPU",
-      "description": "Não foi possível criar embeddings com WebGPU, então a busca semântica (Graph RAG) fica menos precisa. O grafo continua funcionando normalmente!",
-      "options": "Suas opções:",
-      "useCpu": "Usar CPU",
-      "useCpuDescriptionSmall": "Funciona, mas um pouco mais lento",
-      "useCpuDescriptionLarge": "Funciona, mas bem mais lento",
-      "estimated": "(~{{minutes}} min para {{count}} nós)",
-      "skipIt": "Pular",
-      "skipDescription": "O grafo funciona, só fica sem busca semântica por IA",
-      "smallCodebase": "Base de código pequena detectada! A CPU dá conta.",
-      "tip": "💡 Dica: use Chrome ou Edge para ter suporte a WebGPU",
-      "skipEmbeddings": "Pular embeddings",
-      "useCpuRecommended": "Usar CPU (recomendado)",
-      "useCpuSlow": "Usar CPU (lento)"
-    }
-  },
   "queryFab": {
     "query": "Consulta",
     "cypherQuery": "Consulta Cypher",
@@ -96,13 +47,12 @@
     "expand": "Expandir painel de código",
     "dragResize": "Arraste para redimensionar",
     "title": "Inspetor de código",
-    "clearCitations": "Limpar citações da IA",
     "clearSelection": "Limpar seleção",
     "loadingSource": "Carregando código-fonte...",
     "selectFile": "Selecione um nó de arquivo para ver o conteúdo.",
     "code": "Código",
     "selected": "Selecionado",
-    "aiCitations": "Citações da IA",
+    "aiCitations": "Referências",
     "references_one": "{{count}} referência",
     "references_many": "{{count}} referências",
     "references_other": "{{count}} referências",
@@ -110,7 +60,8 @@
     "lines_many": "{{count}} linhas",
     "lines_other": "{{count}} linhas",
     "codeNotAvailable": "Código de {{path}} não disponível em memória",
-    "sourceUnavailable": "O código-fonte completo não está disponível neste índice."
+    "sourceUnavailable": "O código-fonte completo não está disponível neste índice.",
+    "clearCitations": "Limpar referências"
   },
   "canvas": {
     "viewModes": {
@@ -126,13 +77,10 @@
     "clearSelection": "Limpar seleção",
     "clear": "Limpar",
     "layoutOptimizing": "Calculando layout...",
-    "turnOffHighlights": "Desligar todos os destaques",
-    "turnOnHighlights": "Ligar destaques da IA",
     "chatOnly": {
       "title": "Grafo não carregado",
-      "description": "Este projeto é grande, então o grafo foi omitido para manter o navegador responsivo. O chat de IA funciona normalmente.",
-      "descriptionWithCount": "Este projeto tem {{count}} nós, então o grafo foi omitido para manter o navegador responsivo. O chat de IA funciona normalmente.",
-      "citationNote": "Com o grafo descarregado, as citações de arquivo do chat não abrem sozinhas no painel de código.",
+      "description": "Este projeto é grande, então o grafo foi omitido para manter o navegador responsivo.",
+      "descriptionWithCount": "Este projeto tem {{count}} nós, então o grafo foi omitido para manter o navegador responsivo.",
       "loadAnyway": "Carregar o grafo mesmo assim",
       "loadAnywayWarning": "Este projeto tem {{count}} nós. Carregar o grafo completo pode deixar o navegador lento ou travado. Continuar?",
       "loadAnywayWarningUnknown": "Este projeto pode ser grande. Carregar o grafo completo pode deixar o navegador lento ou travado. Continuar?"
@@ -165,7 +113,10 @@
     "removeHighlightTitle": "Clique para remover o destaque do grafo",
     "loading": "Carregando...",
     "viewing": "Visualizando",
-    "view": "Ver"
+    "view": "Ver",
+    "panelTitle": "Fluxos de execução",
+    "closePanel": "Fechar painel",
+    "togglePanel": "Fluxos"
   },
   "processFlow": {
     "title": "Processo: {{label}}",
@@ -183,13 +134,5 @@
     "resetView": "Restaurar visão",
     "toggleFocus": "Alternar foco",
     "copyMermaid": "Copiar Mermaid"
-  },
-  "diagram": {
-    "aiGenerated": "Diagrama gerado por IA",
-    "error": "Erro no diagrama",
-    "showSource": "Mostrar código",
-    "label": "Diagrama",
-    "expandTitle": "Expandir",
-    "loading": "Carregando diagrama…"
   }
 }

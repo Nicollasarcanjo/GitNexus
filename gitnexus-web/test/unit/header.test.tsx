@@ -16,16 +16,9 @@ vi.mock('../../src/hooks/useAppState', () => ({
     currentRepo: '/workspace/group-b/reels',
     graph: null,
     graphMode: 'full',
-    openChatPanel: vi.fn(),
     isRightPanelOpen: false,
-    rightPanelTab: 'chat',
-    setSettingsPanelOpen: vi.fn(),
-    setHelpDialogBoxOpen: vi.fn(),
+    setRightPanelOpen: vi.fn(),
   }),
-}));
-
-vi.mock('../../src/components/EmbeddingStatus', () => ({
-  EmbeddingStatus: () => <div data-testid="embedding-status" />,
 }));
 
 vi.mock('../../src/components/LanguageSwitcher', () => ({

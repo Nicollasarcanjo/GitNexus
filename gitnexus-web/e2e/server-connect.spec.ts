@@ -87,24 +87,11 @@ test.describe('Server Connection & Graph Loading', () => {
   });
 });
 
-test.describe('Nexus AI', () => {
-  test('panel opens and agent initializes without error', async ({ page }) => {
-    await waitForGraphLoaded(page);
-
-    await page.getByRole('button', { name: 'Nexus AI' }).click();
-    await expect(page.getByText('Ask me anything')).toBeVisible({ timeout: 15_000 });
-
-    const errorBanner = page.getByText('Database not ready');
-    expect(await errorBanner.isVisible().catch(() => false)).toBe(false);
-  });
-});
-
 test.describe('Processes Panel', () => {
   test('shows process list and View button works', async ({ page }) => {
     await waitForGraphLoaded(page);
 
-    await page.getByRole('button', { name: 'Nexus AI' }).click();
-    await page.getByText('Processes').click();
+    await page.getByRole('button', { name: 'Flows' }).click();
 
     await expect(page.locator('[data-testid="process-list-loaded"]')).toBeVisible({
       timeout: 15_000,
@@ -123,8 +110,7 @@ test.describe('Processes Panel', () => {
   test('lightbulb highlights nodes in graph', async ({ page }) => {
     await waitForGraphLoaded(page);
 
-    await page.getByRole('button', { name: 'Nexus AI' }).click();
-    await page.getByText('Processes').click();
+    await page.getByRole('button', { name: 'Flows' }).click();
     await expect(page.locator('[data-testid="process-list-loaded"]')).toBeVisible({
       timeout: 15_000,
     });
@@ -137,27 +123,5 @@ test.describe('Processes Panel', () => {
     await lightbulb.waitFor({ state: 'visible', timeout: 5_000 });
     await lightbulb.click();
     await expect(processRow).toHaveClass(/bg-amber-950/, { timeout: 5_000 });
-  });
-});
-
-test.describe('Turn Off All Highlights', () => {
-  test('selecting a node dims others, button clears it', async ({ page }) => {
-    await waitForGraphLoaded(page);
-
-    await expect(page.locator('canvas').first()).toBeVisible({ timeout: 10_000 });
-
-    const fileItem = page.getByText('package.json').first();
-    await expect(fileItem).toBeVisible({ timeout: 10_000 });
-    await fileItem.click();
-
-    const highlightToggle = page.locator('[data-testid="ai-highlights-toggle"]');
-    await expect(highlightToggle).toHaveAttribute('title', 'Turn off all highlights', {
-      timeout: 5_000,
-    });
-
-    await highlightToggle.click();
-    await expect(highlightToggle).toHaveAttribute('title', 'Turn on AI highlights', {
-      timeout: 5_000,
-    });
   });
 });

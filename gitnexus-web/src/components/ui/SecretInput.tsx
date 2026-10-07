@@ -19,7 +19,7 @@ interface SecretInputProps {
  * here.
  *
  * Reveal state lives inside the component, so a caller that unmounts the field
- * (the settings panel returns `null` when closed) reopens masked.
+ * reopens masked.
  */
 export const SecretInput = ({
   value,
