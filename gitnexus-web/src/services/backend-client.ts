@@ -710,6 +710,43 @@ export const fetchServerInfo = async (): Promise<ServerInfo> => {
   return response.json() as Promise<ServerInfo>;
 };
 
+export type TestStatus = 'pending' | 'passed' | 'failed' | 'skipped';
+
+export interface TestRunCase {
+  name: string;
+  status: Exclude<TestStatus, 'pending'>;
+  durationMs?: number;
+  message?: string;
+  details?: string;
+}
+
+export interface TestRunFile {
+  filePath: string;
+  status: TestStatus;
+  tests: TestRunCase[];
+}
+
+/** Latest test run reported for a repo (`gitnexus test-report`). */
+export interface TestRun {
+  id: string;
+  label: string | null;
+  status: 'running' | 'finished';
+  startedAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+  totals: Record<TestStatus, number> & { files: number; tests: number };
+  files: TestRunFile[];
+}
+
+/** `null` when no run was reported, or the server predates test runs. */
+export const fetchTestRun = async (repo?: string): Promise<TestRun | null> => {
+  const response = await fetchWithTimeout(`${_backendUrl}/api/test-run?${repoParam(repo)}`);
+  if (response.status === 404) return null;
+  await assertOk(response);
+  const body = (await response.json()) as { run?: TestRun | null };
+  return body.run ?? null;
+};
+
 const HEARTBEAT_MAX_BACKOFF_MS = 15_000;
 
 /**

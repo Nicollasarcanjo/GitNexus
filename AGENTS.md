@@ -100,6 +100,12 @@ and Laravel string links extracted in `route-extractors/laravel-links.ts` (featu
 route, controller → view, view → partial). Events, queues and container bindings remain
 invisible, so `fallback: full_suite` stays the safe answer for those.
 
+Every run is mirrored on the graph: `gitnexus test-report` (`--start`, `--junit <xml>`,
+`--finish`) posts to `POST /api/test-run` on the local server (`server/test-runs.ts`, latest run
+per repo, in memory), and the web UI polls `GET /api/test-run`, colours the test files and their
+methods (pending / passed / failed / skipped) and lists each test with its failure reason
+(`gitnexus-web/src/components/TestRunPanel.tsx`, `hooks/useTestRun.tsx`).
+
 ## Changelog
 
 | Date | Version | Change |

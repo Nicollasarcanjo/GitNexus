@@ -580,6 +580,20 @@ program
   .action(createLbugLazyAction(() => import('./tool.js'), 'affectedTestsCommand'));
 
 program
+  .command('test-report')
+  .description('Show a test run live on the graph in the web UI (pending, passed, failed)')
+  .option('--start', 'Begin a run; starts `gitnexus serve` when none is listening')
+  .option('--files <path...>', 'With --start: test files about to run (shown as pending)')
+  .option('--junit <file...>', 'Report results from JUnit XML file(s)')
+  .option('--finish', 'Close the run')
+  .option('--clear', 'Remove the run from the graph')
+  .option('--label <text>', 'With --start: what this run is (e.g. the command)')
+  .option('--no-open', 'With --start: do not open the browser')
+  .option('-r, --repo <path>', 'Repository path (default: current directory)')
+  .option('-p, --port <port>', 'Port of the local server', '4747')
+  .action(createLazyAction(() => import('./test-report.js'), 'testReportCommand'));
+
+program
   .command('test-gaps [path...]')
   .alias('test_gaps')
   .description('Source files no test reaches, grouped by folder and ranked by dependents')

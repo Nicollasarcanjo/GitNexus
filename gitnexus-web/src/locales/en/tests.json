@@ -1,0 +1,34 @@
+{
+  "title": "Tests",
+  "running": "Running",
+  "finished": "Finished",
+  "status": {
+    "pending": "Pending",
+    "passed": "Passed",
+    "failed": "Failed",
+    "skipped": "Skipped"
+  },
+  "totals": {
+    "passed": "{{count}} passed",
+    "failed": "{{count}} failed",
+    "pending": "{{count}} pending",
+    "skipped": "{{count}} skipped"
+  },
+  "filters": {
+    "label": "Filter tests",
+    "all": "All",
+    "failed": "Failures"
+  },
+  "showOnGraph": "Show on graph",
+  "hideOnGraph": "Hide from graph",
+  "collapse": "Collapse",
+  "expand": "Expand",
+  "fileCount": "{{done}}/{{total}}",
+  "notRunYet": "Not run yet.",
+  "notRun": "Was not run in this sequence.",
+  "noFailures": "No failures.",
+  "noFiles": "No tests in this run.",
+  "showDetails": "Show full output",
+  "noReason": "The runner gave no reason.",
+  "notInGraph": "Outside the loaded graph"
+}

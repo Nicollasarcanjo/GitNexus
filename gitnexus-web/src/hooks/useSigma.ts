@@ -91,6 +91,12 @@ interface UseSigmaOptions {
    * hide everything else. `null` keeps the whole graph visible (dimmed).
    */
   focusDepth?: number | null;
+  /**
+   * Node id → colour that replaces the node's own (a test run's pending /
+   * passed / failed). While any are set and nothing is selected, the rest of
+   * the graph is dimmed so the coloured nodes read at a glance.
+   */
+  nodeStatusColors?: Map<string, string>;
 }
 
 interface UseSigmaReturn {
@@ -182,6 +188,7 @@ const NOVERLAP_MAX_NODES = 5000;
 // In focus mode the selected node's neighbours always show their label up to
 // this many; beyond it Sigma's normal label density rules apply.
 const FOCUS_FORCE_LABEL_MAX = 60;
+const STATUS_FORCE_LABEL_MAX = 24;
 
 const sameSet = (a: Set<string>, b: Set<string>): boolean => {
   if (a === b) return true;
@@ -341,6 +348,7 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
   const highlightedRef = useRef<Set<string>>(new Set());
   const blastRadiusRef = useRef<Set<string>>(new Set());
   const visibleEdgeTypesRef = useRef<EdgeType[] | null>(null);
+  const statusColorsRef = useRef<Map<string, string>>(new Map());
   const useStraightEdgesRef = useRef(false);
 
   // Keep callback refs fresh so the one-time sigma event handlers always
@@ -413,6 +421,12 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
     options.blastRadiusNodeIds,
     options.visibleEdgeTypes,
   ]);
+
+  useEffect(() => {
+    // The provider hands over a new Map only when the run actually changed.
+    statusColorsRef.current = options.nodeStatusColors ?? new Map();
+    requestRefresh();
+  }, [requestRefresh, options.nodeStatusColors]);
 
   const updateFocus = useCallback((nodeId: string | null) => {
     const graph = graphRef.current;
@@ -699,6 +713,28 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
         const isBlastRadiusNode = blastRadius.has(node);
         const showHighlightLabels = highlighted.size + blastRadius.size <= MAX_HIGHLIGHT_LABELS;
 
+        const statusColors = statusColorsRef.current;
+        if (statusColors.size > 0) {
+          const statusColor = statusColors.get(node);
+          // Every branch below derives from data.color, so a status node keeps
+          // its colour through selection, focus and dimming.
+          if (statusColor) data.color = statusColor;
+          if (!currentSelected && !hasHighlights && !hasBlastRadius) {
+            if (statusColor) {
+              res.size = (data.size || 8) * 1.6;
+              res.zIndex = 2;
+              // A run colours each test file and its methods; naming them all
+              // buries the graph, so only a small run gets labels up front.
+              res.forceLabel = statusColors.size <= STATUS_FORCE_LABEL_MAX;
+            } else {
+              res.color = dimColor(data.color, 0.3);
+              res.size = (data.size || 8) * 0.6;
+              res.zIndex = 0;
+            }
+            return res;
+          }
+        }
+
         // Blast radius takes priority (red highlighting)
         if (hasBlastRadius && !currentSelected) {
           if (isBlastRadiusNode) {
@@ -839,6 +875,13 @@ export const useSigma = (options: UseSigmaOptions = {}): UseSigmaReturn => {
         const highlighted = highlightedRef.current;
         const blastRadius = blastRadiusRef.current;
         const hasHighlights = highlighted.size > 0 || blastRadius.size > 0; // Check BOTH sets
+
+        // A test run on screen: edges recede so the status-coloured nodes lead.
+        if (statusColorsRef.current.size > 0 && !hasHighlights && !currentSelected) {
+          res.color = dimColor(data.color, 0.2);
+          res.size = Math.max(0.2, (data.size || 1) * 0.5);
+          return res;
+        }
 
         if (hasHighlights && !currentSelected) {
           if (graph) {

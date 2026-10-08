@@ -77,6 +77,56 @@ Events, queues, container bindings and config keys are still invisible: when a
 change is of that kind (a listener, a job, a service provider, a middleware
 alias), run the full suite even if the tool says `fallback: none`.
 
+## Live view — every run is shown on the graph
+
+Whenever this skill runs tests (sections 2, 3 and 4), the run is mirrored on the
+GitNexus graph in the browser: each test file is a point that turns amber while
+pending, green when it passes and red when it fails; clicking a point lists its
+tests and, for a failure, why it failed. Do this for every run, without being
+asked.
+
+1. **Before running**, announce the run with the test files about to execute:
+
+   ```
+   node .gitnexus/run.cjs test-report --start --label <one-word-label> --files <test file> <test file> …
+   ```
+
+   Keep the label to one word (`afetados`, `suite`, `gerar`): the runner script
+   does not preserve quoting on every shell. It starts the local GitNexus server if none is listening and opens the
+   browser on the graph (it does not open a second tab when one is already
+   watching). For a full-suite run, omit `--files`: files appear as they report.
+
+2. **Run each command with a JUnit report**, written inside the repository so a
+   containerized runner and the host see the same file:
+
+   | Runner              | Add to the command                                                             |
+   | ------------------- | ------------------------------------------------------------------------------ |
+   | PHPUnit / `artisan` | `--log-junit storage/logs/gitnexus-junit.xml`                                  |
+   | Pest                | `--log-junit storage/logs/gitnexus-junit.xml`                                  |
+   | Vitest              | `--reporter=default --reporter=junit --outputFile.junit=gitnexus-junit.xml`    |
+   | Jest (`jest-junit`) | `--reporters=default --reporters=jest-junit`                                   |
+   | Playwright          | `--reporter=list,junit` with `PLAYWRIGHT_JUNIT_OUTPUT_NAME=gitnexus-junit.xml` |
+   | pytest              | `--junitxml=gitnexus-junit.xml`                                                |
+
+   Any writable, git-ignored path works; delete the file afterwards.
+
+3. **After each command**, send its results — pass or fail, the report exists:
+
+   ```
+   node .gitnexus/run.cjs test-report --junit <report.xml>
+   ```
+
+   For a long selection, run it in a few batches (per folder or per runner) and
+   report after each, so the graph fills in as the run advances instead of all
+   at once at the end.
+
+4. **When everything has run**: `node .gitnexus/run.cjs test-report --finish`.
+   Files still amber after that did not run — say so in the report.
+
+If the command exits non-zero before writing a report (a fatal error, a missing
+service), there is nothing to send: finish the run and report the error text.
+The live view never replaces the written report in section 5.
+
 ## 3. No changes → run what exists
 
 Run the full suite with the project's command, then `test-gaps` for a one-line

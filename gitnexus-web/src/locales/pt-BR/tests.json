@@ -1,0 +1,34 @@
+{
+  "title": "Testes",
+  "running": "Executando",
+  "finished": "Concluído",
+  "status": {
+    "pending": "Aguardando",
+    "passed": "Passou",
+    "failed": "Falhou",
+    "skipped": "Ignorado"
+  },
+  "totals": {
+    "passed": "{{count}} passaram",
+    "failed": "{{count}} falharam",
+    "pending": "{{count}} aguardando",
+    "skipped": "{{count}} ignorados"
+  },
+  "filters": {
+    "label": "Filtrar testes",
+    "all": "Todos",
+    "failed": "Falhas"
+  },
+  "showOnGraph": "Mostrar no grafo",
+  "hideOnGraph": "Ocultar do grafo",
+  "collapse": "Recolher",
+  "expand": "Expandir",
+  "fileCount": "{{done}}/{{total}}",
+  "notRunYet": "Ainda não executado.",
+  "notRun": "Não foi executado nesta sequência.",
+  "noFailures": "Nenhuma falha.",
+  "noFiles": "Nenhum teste nesta execução.",
+  "showDetails": "Ver saída completa",
+  "noReason": "O runner não informou o motivo.",
+  "notInGraph": "Fora do grafo carregado"
+}

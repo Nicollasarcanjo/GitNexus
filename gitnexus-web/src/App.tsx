@@ -8,6 +8,8 @@ import { RightPanel } from './components/RightPanel';
 import { StatusBar } from './components/StatusBar';
 import { FileTreePanel } from './components/FileTreePanel';
 import { CodeReferencesPanel } from './components/CodeReferencesPanel';
+import { TestRunPanel } from './components/TestRunPanel';
+import { TestRunProvider } from './hooks/useTestRun';
 import { ExecutionDashboard } from './components/ExecutionDashboard';
 import { buildGraphFromConnectResult } from './lib/apply-connect-result';
 import {
@@ -174,7 +176,11 @@ const AppContent = () => {
     const restoreRepoParam = pickRestoreRepo(params);
     // `?skipGraph=1` forces chat-only, `?skipGraph=0` forces a full graph;
     // absent → auto-detect by node count. Bookmarkable / survives F5 (#2178).
-    const skipGraphParam = parseSkipGraphParam(params.get('skipGraph'));
+    // `?tests=1` is the link `gitnexus test-report` opens: results are drawn on
+    // the graph, so it is loaded even for a project above the size threshold.
+    const skipGraphParam =
+      parseSkipGraphParam(params.get('skipGraph')) ??
+      (params.get('tests') === '1' ? false : undefined);
 
     if (!serverUrlParam && !restoreRepoParam) return;
     autoConnectRan.current = true;
@@ -377,6 +383,7 @@ const AppContent = () => {
         {/* Graph area - takes remaining space */}
         <div className="relative min-w-0 flex-1">
           <GraphCanvas ref={graphCanvasRef} />
+          <TestRunPanel onFocusNode={handleFocusNode} />
 
           {/* Code References Panel (overlay) - does NOT resize the graph, it overlaps on top */}
           {isCodePanelOpen && (codeReferences.length > 0 || !!selectedNode) && (
@@ -435,7 +442,9 @@ function App() {
   }
   return (
     <AppStateProvider>
-      <AppContent />
+      <TestRunProvider>
+        <AppContent />
+      </TestRunProvider>
     </AppStateProvider>
   );
 }

@@ -11,6 +11,7 @@ import {
 } from '@/lib/lucide-icons';
 import { useSigma } from '../hooks/useSigma';
 import { useAppState } from '../hooks/useAppState';
+import { useTestRun } from '../hooks/useTestRun';
 import {
   knowledgeGraphToGraphology,
   knowledgeGraphToTreeGraphology,
@@ -50,6 +51,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
     loadGraphAnyway,
   } = useAppState();
   const [hoveredNodeName, setHoveredNodeName] = useState<string | null>(null);
+  const { nodeColors: testNodeColors } = useTestRun();
 
   const nodeById = useMemo(() => {
     if (!graph) return new Map<string, GraphNode>();
@@ -105,6 +107,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle>((_, ref) => {
     visibleEdgeTypes,
     layoutMode: graphViewMode,
     focusDepth: depthFilter,
+    nodeStatusColors: testNodeColors,
   });
 
   const handleViewModeChange = useCallback(

@@ -69,6 +69,7 @@ import { installServeMcpAuth, mountMCPEndpoints } from './mcp-http.js';
 import { fileURLToPath } from 'url';
 import { isTerminalJobStatus, JobManager, type AnalyzeJobPartialOutcome } from './analyze-job.js';
 import { mountSSEProgress } from './sse-progress.js';
+import { TestRunStore } from './test-runs.js';
 import {
   resolveEmbedRunOutcome,
   withMeasuredEmbeddingCount,
@@ -1086,6 +1087,7 @@ export const createServer = async (port: number, host: string = '127.0.0.1') => 
   // any configured public origin — prevents CSRF from other devices.
   const requireTrustedOrigin = createWriteOriginGuard(host, port);
   logOriginPolicy(host);
+  const testRuns = new TestRunStore();
 
   // No explicit OPTIONS route is registered. The Chromium Private Network
   // Access header is set by the global middleware above (pre-cors), and
@@ -1885,6 +1887,65 @@ export const createServer = async (port: number, host: string = '127.0.0.1') => 
       res.status(statusFromError(err)).json(httpErrorBody(err, 'Failed to query cluster detail'));
     }
   });
+
+  // ── Test runs (live results on the graph) ────────────────────────────
+
+  // GET /api/test-run — the latest run for a repo. Polled by the web UI while
+  // a run is open, hence the generous limit.
+  app.get('/api/test-run', createRouteLimiter({ limit: 240 }), async (req, res) => {
+    try {
+      const entry = await resolveRepo(requestedRepo(req), false, req, { validateStorage: false });
+      if (!entry?.path) {
+        res.status(404).json({ error: 'Repository not found. Run: gitnexus analyze' });
+        return;
+      }
+      testRuns.markViewed(entry.path);
+      res.json({ run: testRuns.get(entry.path) });
+    } catch (err: any) {
+      res.status(statusFromError(err)).json(httpErrorBody(err, 'Failed to read test run'));
+    }
+  });
+
+  // POST /api/test-run — { repo, action: 'start' | 'report' | 'finish' | 'clear', ... }
+  app.post(
+    '/api/test-run',
+    createRouteLimiter({ limit: 240 }),
+    requireTrustedOrigin,
+    async (req, res) => {
+      try {
+        const entry = await resolveRepo(requestedRepo(req), false, req, { validateStorage: false });
+        if (!entry?.path) {
+          res.status(404).json({ error: 'Repository not found. Run: gitnexus analyze' });
+          return;
+        }
+        const { action, files, results, label } = req.body ?? {};
+        const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+        switch (action) {
+          case 'start':
+            res.json({
+              run: testRuns.start(entry.path, list(files), label),
+              viewerActive: testRuns.hasActiveViewer(entry.path),
+              webUi: staticDir !== null,
+            });
+            return;
+          case 'report':
+            res.json({ run: testRuns.report(entry.path, list(results)) });
+            return;
+          case 'finish':
+            res.json({ run: testRuns.finish(entry.path) });
+            return;
+          case 'clear':
+            testRuns.clear(entry.path);
+            res.json({ run: null });
+            return;
+          default:
+            res.status(400).json({ error: 'action must be start, report, finish or clear' });
+        }
+      } catch (err: any) {
+        res.status(statusFromError(err)).json(httpErrorBody(err, 'Failed to update test run'));
+      }
+    },
+  );
 
   // ── Analyze API ──────────────────────────────────────────────────────
 
