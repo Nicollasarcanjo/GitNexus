@@ -26,6 +26,7 @@ const MCP_SKILL_DIRS = [
   'gitnexus-exploring',
   'gitnexus-impact-analysis',
   'gitnexus-refactoring',
+  'testes',
 ] as const;
 
 function mcpPath(dir: string): string {

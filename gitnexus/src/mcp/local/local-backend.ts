@@ -31,11 +31,15 @@ import {
   buildFileDependencyQuery,
   computeAffectedTests,
   computePathImpact,
+  bridgeRouteEdges,
+  computeTestGaps,
   INDEXED_FILES_QUERY,
   normalizeRepoPath,
   parseNameStatus,
+  ROUTE_BRIDGE_QUERY,
   type ChangedFile,
   type FileDependencyEdge,
+  type RouteBridgeRow,
 } from './path-impact.js';
 import { querySpringAopMetadata } from './aop-metadata.js';
 import {
@@ -3025,6 +3029,8 @@ export class LocalBackend {
         return this.withToolStaleness(repo, await this.pathImpact(repo, p));
       case 'affected_tests':
         return this.withToolStaleness(repo, await this.affectedTests(repo, p));
+      case 'test_gaps':
+        return this.withToolStaleness(repo, await this.testGaps(repo, p));
       case 'check':
         return this.check(repo, p);
       case 'rename':
@@ -6391,9 +6397,11 @@ export class LocalBackend {
       typeof minConfidence === 'number' && Number.isFinite(minConfidence)
         ? minConfidence
         : undefined;
-    const [fileRows, edgeRows] = await Promise.all([
+    const [fileRows, edgeRows, routeRows] = await Promise.all([
       executeParameterized(repo.lbugPath, INDEXED_FILES_QUERY, {}),
       executeParameterized(repo.lbugPath, buildFileDependencyQuery(confidence), {}),
+      // An index without routes (or from before Route nodes existed) has nothing to bridge.
+      executeParameterized(repo.lbugPath, ROUTE_BRIDGE_QUERY, {}).catch(() => []),
     ]);
     const indexedFiles: string[] = [];
     for (const row of fileRows as any[]) {
@@ -6408,6 +6416,19 @@ export class LocalBackend {
         edges.push({ src: normalizeRepoPath(src), dst: normalizeRepoPath(dst) });
       }
     }
+    const bridgeRows: RouteBridgeRow[] = [];
+    for (const row of routeRows as any[]) {
+      const src = row?.src ?? row?.[0];
+      const dst = row?.dst ?? row?.[1];
+      if (typeof src !== 'string' || typeof dst !== 'string' || !src || !dst) continue;
+      bridgeRows.push({
+        src: normalizeRepoPath(src),
+        dst: normalizeRepoPath(dst),
+        route: String(row?.route ?? row?.[2] ?? ''),
+        handlerLabel: String(row?.handlerLabel ?? row?.[3] ?? ''),
+      });
+    }
+    edges.push(...bridgeRouteEdges(bridgeRows));
     return { indexedFiles, edges };
   }
 
@@ -6430,6 +6451,20 @@ export class LocalBackend {
       maxDepth: depth === undefined ? undefined : depth === 0 ? null : depth,
       limit: limit === undefined || limit === 0 ? undefined : limit,
       includeTests: params.include_tests !== false,
+    });
+  }
+
+  /** test_gaps — source files no test reaches, grouped by folder. */
+  private async testGaps(repo: RepoHandle, params: Record<string, unknown>): Promise<any> {
+    await this.ensureInitialized(repo);
+
+    const { indexedFiles, edges } = await this.loadFileDependencyGraph(repo, params.min_confidence);
+    const limit = toNonNegativeInt(params.limit);
+    return computeTestGaps({
+      indexedFiles,
+      edges,
+      paths: toPathList(params.paths),
+      limit: limit === undefined || limit === 0 ? undefined : limit,
     });
   }
 

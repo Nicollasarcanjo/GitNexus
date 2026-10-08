@@ -12,7 +12,7 @@
  *   - .claude-plugin/marketplace.json                     (plugins[gitnexus])
  *   - gitnexus-claude-plugin/.codex-plugin/plugin.json    (top-level version)
  *   - .agents/plugins/marketplace.json                    (plugins[gitnexus])
- *   - gitnexus-claude-plugin/skills/<skill>/mcp.json      (gitnexus@<version> launch arg, x10)
+ *   - gitnexus-claude-plugin/skills/<skill>/mcp.json      (gitnexus@<version> launch arg, x11)
  *   - gitnexus-factory-plugin/.factory-plugin/plugin.json (top-level version)
  *   - gitnexus-factory-plugin/mcp.json                    (gitnexus@<version> launch arg)
  *   - .factory-plugin/marketplace.json                    (plugins[gitnexus])
@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 // `npx -y gitnexus@<version> mcp` when a skill starts), not quickstart docs, so
 // they must ship pinned to the released version and be auto-stamped here like
 // the other surfaces — otherwise every skill invocation pulls whatever owns
-// `gitnexus@latest`, independent of the reviewed plugin version. All ten are
+// `gitnexus@latest`, independent of the reviewed plugin version. All eleven are
 // kept byte-identical (the shipped-skills-sync drift guard enforces it).
 const PLUGIN_SKILL_MCP_DIRS = [
   'gitnexus-plan',
@@ -46,6 +46,7 @@ const PLUGIN_SKILL_MCP_DIRS = [
   'gitnexus-exploring',
   'gitnexus-impact-analysis',
   'gitnexus-refactoring',
+  'testes',
 ];
 
 const MANIFEST_SURFACES = [

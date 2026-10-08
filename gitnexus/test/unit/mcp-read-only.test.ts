@@ -20,6 +20,7 @@ const READ_ONLY_TOOLS = [
   'read_file',
   'route_map',
   'shape_check',
+  'test_gaps',
   'tool_map',
   'trace',
 ];

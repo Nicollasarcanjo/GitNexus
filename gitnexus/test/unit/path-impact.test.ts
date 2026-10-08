@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bridgeRouteEdges,
   buildFileDependencyQuery,
   buildTestCommand,
+  buildTestCommands,
   computeAffectedTests,
   computePathImpact,
+  computeTestGaps,
   detectTestRunner,
   isIgnorableChange,
   matchSeedFiles,
@@ -320,5 +323,161 @@ describe('test runner hint', () => {
     expect(buildTestCommand('go', ['pkg/a/x_test.go', 'pkg/a/y_test.go', 'pkg/b/z_test.go'])).toBe(
       'go test ./pkg/a ./pkg/b',
     );
+  });
+});
+
+describe('buildTestCommands', () => {
+  it('emits one command per runner when a selection spans several', () => {
+    const commands = buildTestCommands(
+      [
+        'tests/Unit/SaleTest.php',
+        'tests/Browser/CheckoutTest.php',
+        'resources/js/cart.test.ts',
+        'e2e/checkout.spec.ts',
+      ],
+      ['artisan', 'playwright.config.ts'],
+    );
+    expect(commands).toEqual([
+      { runner: 'artisan', command: 'php artisan test --filter "SaleTest"', tests: 1 },
+      { runner: 'dusk', command: 'php artisan dusk --filter "CheckoutTest"', tests: 1 },
+      { runner: 'vitest', command: 'npx vitest run resources/js/cart.test.ts', tests: 1 },
+      { runner: 'playwright', command: 'npx playwright test e2e/checkout.spec.ts', tests: 1 },
+    ]);
+  });
+
+  it('keeps e2e specs on the unit runner when Playwright is not configured', () => {
+    expect(buildTestCommands(['e2e/a.spec.ts'], [])).toEqual([
+      { runner: 'vitest', command: 'npx vitest run e2e/a.spec.ts', tests: 1 },
+    ]);
+  });
+
+  it('is carried on the affected_tests result', () => {
+    const result = computeAffectedTests({
+      indexedFiles: FILES,
+      edges: EDGES,
+      changedFiles: [{ filePath: 'app/Models/Sale.php', status: 'modified' }],
+    });
+    expect(result.commands).toEqual([
+      {
+        runner: 'artisan',
+        command: 'php artisan test --filter "SaleTest|SaleServiceTest"',
+        tests: 2,
+      },
+    ]);
+  });
+});
+
+describe('computeTestGaps', () => {
+  const gaps = (paths?: string[], limit?: number) =>
+    computeTestGaps({ indexedFiles: FILES, edges: EDGES, paths, limit });
+
+  it('reports the source files no test reaches', () => {
+    const result = gaps();
+    expect(result.summary).toMatchObject({
+      test_files: 3,
+      source_files: 7,
+      covered: 2,
+      uncovered: 5,
+      unlinked: 2,
+    });
+    expect(result.files.map((f) => f.filePath)).toEqual([
+      'app/Http/Controllers/SaleController.php',
+      'app/Console/Commands/ReportCommand.php',
+      'routes/web.php',
+      'app/Support/Orphan.php',
+      'artisan',
+    ]);
+  });
+
+  it('ranks areas by how much depends on their uncovered files', () => {
+    const result = gaps();
+    expect(result.areas[0]).toEqual({
+      folder: 'app/Http/Controllers',
+      files: 1,
+      uncovered: 1,
+      coverage_pct: 0,
+      dependents: 1,
+    });
+    expect(result.areas.map((a) => a.folder)).not.toContain('app/Models');
+  });
+
+  it('marks files the graph has no edge for as unlinked', () => {
+    const orphan = gaps().files.find((f) => f.filePath === 'app/Support/Orphan.php');
+    expect(orphan).toMatchObject({ linked: false, dependents: 0 });
+  });
+
+  it('restricts the report to the given paths', () => {
+    const result = gaps(['app/Services', 'nope']);
+    expect(result.summary).toMatchObject({ source_files: 1, covered: 1, uncovered: 0 });
+    expect(result.summary.coverage_pct).toBe(100);
+    expect(result.unmatched_paths).toEqual(['nope']);
+  });
+
+  it('caps the file listing and says so', () => {
+    const result = gaps(undefined, 2);
+    expect(result.files).toHaveLength(2);
+    expect(result.truncated).toBe(true);
+    expect(result.summary.uncovered).toBe(5);
+  });
+});
+
+describe('bridgeRouteEdges', () => {
+  const row = (src: string, dst: string, route: string, handlerLabel: string) => ({
+    src,
+    dst,
+    route,
+    handlerLabel,
+  });
+
+  it('links a test to the controller behind the route, not to the routes file', () => {
+    expect(
+      bridgeRouteEdges([
+        row('tests/Feature/SaleTest.php', 'routes/web.php', 'Route:GET /sales', 'File'),
+        row(
+          'tests/Feature/SaleTest.php',
+          'app/Http/SaleController.php',
+          'Route:GET /sales',
+          'Method',
+        ),
+      ]),
+    ).toEqual([{ src: 'tests/Feature/SaleTest.php', dst: 'app/Http/SaleController.php' }]);
+  });
+
+  it('does not bridge templates: a menu link is not a dependency on the handler', () => {
+    expect(
+      bridgeRouteEdges([
+        row(
+          'resources/views/layouts/app.blade.php',
+          'app/Http/SaleController.php',
+          'Route:GET /sales',
+          'Method',
+        ),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('keeps the routes file as handler for closure routes and de-duplicates', () => {
+    expect(
+      bridgeRouteEdges([
+        row('tests/Feature/PingTest.php', 'routes/web.php', 'Route:GET /ping', 'File'),
+        row('tests/Feature/PingTest.php', 'routes/web.php', 'Route:GET /pong', 'File'),
+      ]),
+    ).toEqual([{ src: 'tests/Feature/PingTest.php', dst: 'routes/web.php' }]);
+  });
+});
+
+describe('isIgnorableChange (infrastructure files)', () => {
+  it('ignores CI and container definitions but not application config', () => {
+    for (const p of [
+      '.github/workflows/deploy.yml',
+      'docker-compose.prod.yml',
+      '.env.example',
+      'docker/php/Dockerfile',
+    ]) {
+      expect(isIgnorableChange(p), p).toBe(true);
+    }
+    for (const p of ['config/app.php', 'bootstrap/app.php', 'composer.json', 'phpunit.xml']) {
+      expect(isIgnorableChange(p), p).toBe(false);
+    }
   });
 });

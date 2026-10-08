@@ -42,7 +42,11 @@ function collectSkillFiles(): string[] {
   for (const root of skillRoots) {
     if (!existsSync(root)) continue;
     for (const dir of readdirSync(root)) {
-      if (root === projectSkillsRoot && !dir.startsWith('gitnexus-')) {
+      if (
+        root === projectSkillsRoot &&
+        !dir.startsWith('gitnexus-') &&
+        !STANDARD_SKILL_CATALOG.some((skill) => skill.name === dir)
+      ) {
         continue;
       }
       const skillMd = path.join(root, dir, 'SKILL.md');

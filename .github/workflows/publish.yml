@@ -705,7 +705,8 @@ jobs:
             ../gitnexus-claude-plugin/skills/gitnexus-debugging/mcp.json \
             ../gitnexus-claude-plugin/skills/gitnexus-exploring/mcp.json \
             ../gitnexus-claude-plugin/skills/gitnexus-impact-analysis/mcp.json \
-            ../gitnexus-claude-plugin/skills/gitnexus-refactoring/mcp.json
+            ../gitnexus-claude-plugin/skills/gitnexus-refactoring/mcp.json \
+            ../gitnexus-claude-plugin/skills/testes/mcp.json
           git commit -m "release: ${VTAG}" --allow-empty
           RELEASE_SHA="$(git rev-parse HEAD)"
           echo "Detached release commit: $RELEASE_SHA"

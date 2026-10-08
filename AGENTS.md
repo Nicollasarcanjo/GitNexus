@@ -87,10 +87,24 @@ by `gitnexus setup`) and the Claude Code plugin; review also has a standalone Cu
 mirror. `gitnexus/test/unit/shipped-skills-sync.test.ts` guards the copies. Token savings of the workflow are measurable with
 `eval/workflow_bench/` (real headless CLI runs, free-model routing supported — see its README).
 
+## Graph-guided tests (`/testes`)
+
+`.claude/skills/testes/SKILL.md` is a standard skill (catalogued in
+`gitnexus/src/cli/standard-skills.ts`, installed into every analyzed repo). It runs only the
+tests the graph links to a change (`affected_tests`), runs the suite when nothing changed, and
+writes missing tests area by area from `test_gaps`. It never edits production code.
+
+The file graph behind it (`gitnexus/src/mcp/local/path-impact.ts`) follows calls, imports and
+inheritance, plus two runtime links: route consumers → handlers (`FETCHES` ⨝ `HANDLES_ROUTE`)
+and Laravel string links extracted in `route-extractors/laravel-links.ts` (feature test →
+route, controller → view, view → partial). Events, queues and container bindings remain
+invisible, so `fallback: full_suite` stays the safe answer for those.
+
 ## Changelog
 
 | Date | Version | Change |
 |------|---------|--------|
+| 2026-10-08 | 1.18.0 | Added the `testes` skill, `test_gaps` tool/CLI, per-runner `commands` on `affected_tests`, and route/view links in the file dependency graph. |
 | 2026-09-24 | 1.17.0 | Clones with the same `origin` URL now share a store automatically; `--no-share` records a lasting opt-out (#3352). |
 | 2026-09-24 | 1.16.0 | Documented the shared worktree index store (`<GITNEXUS_HOME>/stores/`, `analyze --share-with`, `GITNEXUS_SHARED_STORE=off`) in the storage notes (#3352). |
 | 2026-09-07 | 1.15.0 | Added the Objective-C provider guide as the required reference before changing Objective-C parsing or resolution. |

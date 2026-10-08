@@ -418,6 +418,21 @@ export async function affectedTestsCommand(options?: {
   output(result);
 }
 
+export async function testGapsCommand(
+  paths: string[],
+  options?: { limit?: string; minConfidence?: string; repo?: string; branch?: string },
+): Promise<void> {
+  const backend = await getBackend();
+  const result = await backend.callTool('test_gaps', {
+    paths,
+    limit: options?.limit,
+    min_confidence: options?.minConfidence ? Number(options.minConfidence) : undefined,
+    repo: options?.repo,
+    branch: options?.branch,
+  });
+  output(result);
+}
+
 export async function checkCommand(options?: {
   cycles?: boolean;
   json?: boolean;

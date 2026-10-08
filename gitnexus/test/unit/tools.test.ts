@@ -23,8 +23,8 @@ const MUTATING_TOOLS = new Set(['rename', 'group_sync']);
 const OPEN_WORLD_READ_ONLY_TOOLS = new Set(['query']);
 
 describe('GITNEXUS_TOOLS', () => {
-  it('exports all tools (8 base + 1 explain + 1 pdg_query + 3 route/tool/shape + 1 api_impact + 1 trace + 2 group + read_file + grep + path_impact + affected_tests)', () => {
-    expect(GITNEXUS_TOOLS).toHaveLength(21);
+  it('exports all tools (8 base + 1 explain + 1 pdg_query + 3 route/tool/shape + 1 api_impact + 1 trace + 2 group + read_file + grep + path_impact + affected_tests + test_gaps)', () => {
+    expect(GITNEXUS_TOOLS).toHaveLength(22);
   });
 
   it('contains all expected tool names', () => {
@@ -38,6 +38,7 @@ describe('GITNEXUS_TOOLS', () => {
         'detect_changes',
         'path_impact',
         'affected_tests',
+        'test_gaps',
         'check',
         'rename',
         'impact',

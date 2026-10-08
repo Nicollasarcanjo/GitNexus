@@ -15,6 +15,13 @@ import type { PipelinePhase, PipelineContext, PhaseResult } from './types.js';
 import { getPhaseOutput } from './types.js';
 import type { ParseOutput } from './parse.js';
 import { isTemplateRouteCandidate } from '../utils/template-file.js';
+import { isTestFilePath } from '../utils/test-file-path.js';
+import {
+  buildViewIndex,
+  extractTestRouteCalls,
+  extractViewReferences,
+  resolveViewPath,
+} from '../route-extractors/laravel-links.js';
 import { nextjsFileToRouteURL, normalizeFetchURL } from '../route-extractors/nextjs.js';
 import { expoFileToRouteURL } from '../route-extractors/expo.js';
 import { phpFileToRouteURL } from '../route-extractors/php.js';
@@ -471,6 +478,42 @@ export const routesPhase: PipelinePhase<RoutesOutput> = {
           ...extractTemplateStaticFetchCalls(filePath, content, namedRouteRegistry),
         );
       }
+    }
+
+    // Laravel: links that only exist as strings at runtime (see laravel-links.ts).
+    const viewIndex = buildViewIndex(allPaths);
+    const phpTestPaths =
+      namedRouteRegistry.size > 0 || routeRegistry.size > 0
+        ? allPaths.filter((p) => p.endsWith('.php') && isTestFilePath(p))
+        : [];
+    if (viewIndex.size > 0 || phpTestPaths.length > 0) {
+      const phpTests = new Set(phpTestPaths);
+      const linkPaths =
+        viewIndex.size > 0 ? allPaths.filter((p) => p.endsWith('.php')) : phpTestPaths;
+      const linkContents = await readFileContents(ctx.repoPath, linkPaths);
+      let viewLinks = 0;
+      for (const [filePath, content] of linkContents) {
+        if (phpTests.has(filePath)) {
+          allFetchCalls.push(...extractTestRouteCalls(filePath, content, namedRouteRegistry));
+        }
+        if (viewIndex.size === 0) continue;
+        const sourceId = generateId('File', filePath);
+        for (const viewName of extractViewReferences(filePath, content)) {
+          const viewPath = resolveViewPath(viewName, viewIndex);
+          if (!viewPath || viewPath === filePath) continue;
+          const targetId = generateId('File', viewPath);
+          ctx.graph.addRelationship({
+            id: generateId('IMPORTS', `${sourceId}->view->${targetId}`),
+            sourceId,
+            targetId,
+            type: 'IMPORTS',
+            confidence: 0.9,
+            reason: 'view-reference',
+          });
+          viewLinks++;
+        }
+      }
+      if (isDev && viewLinks > 0) logger.info(`🖼️ Linked ${viewLinks} view references`);
     }
 
     // ── Extract Expo Router navigation patterns ──

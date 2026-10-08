@@ -343,7 +343,9 @@ describe('generateAIContextFiles', () => {
     // unconditional text load-bearing enough to warrant the budget), then
     // 0.65 → 0.70 for the #3291 always-on `staleness` blockquote line (a second
     // `>` line, not a new Always-Do bullet — the cheaper durable slot; the
-    // 0.65 band had ~3 chars of headroom so any useful line required a bump) —
+    // 0.65 band had ~3 chars of headroom so any useful line required a bump),
+    // then 0.70 → 0.75 for the graph-first scoping bullet and the `testes` skill
+    // row (the entry point that makes agents read path_impact before files) —
     // each time with the same argument, that the added line is load-bearing and
     // the block is still meaningfully smaller than the original. That is a
     // ratchet with no ratchet: an absolute cap can only ever fail on the PR
@@ -361,7 +363,7 @@ describe('generateAIContextFiles', () => {
       content.indexOf('<!-- gitnexus:start -->'),
       content.indexOf('<!-- gitnexus:end -->'),
     );
-    expect(block.length).toBeLessThan(PRE_TRIM_BLOCK_CHARS * 0.7);
+    expect(block.length).toBeLessThan(PRE_TRIM_BLOCK_CHARS * 0.75);
   });
 
   it('handles empty stats', async () => {
@@ -734,7 +736,7 @@ Old content here.
       expect(claudeCopy).not.toBe('CUSTOM-AGENTS-MIRROR\n');
       expect(claudeCopy.length).toBeGreaterThan(0);
       expect(result.files).toContain(
-        '.agents/skills/gitnexus-*/ (5 written, 1 preserved for .agents)',
+        '.agents/skills/gitnexus-*/ (6 written, 1 preserved for .agents)',
       );
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
@@ -756,9 +758,9 @@ Old content here.
       const result = await generateAIContextFiles(agentsDir, agentsStorage, 'TestProject', stats);
 
       // Canonical .claude copy is always written (flat layout, #2434).
-      expect(result.files).toContain('.claude/skills/gitnexus-*/ (6 skills)');
+      expect(result.files).toContain('.claude/skills/gitnexus-*/ (7 skills)');
       // Mirror is reported.
-      expect(result.files).toContain('.agents/skills/gitnexus-*/ (6 skills mirrored for .agents)');
+      expect(result.files).toContain('.agents/skills/gitnexus-*/ (7 skills mirrored for .agents)');
 
       const claudeSkill = await fs.readFile(
         path.join(agentsDir, '.claude', 'skills', 'gitnexus-cli', 'SKILL.md'),
@@ -790,7 +792,7 @@ Old content here.
         stats,
       );
 
-      expect(result.files).toContain('.claude/skills/gitnexus-*/ (6 skills)');
+      expect(result.files).toContain('.claude/skills/gitnexus-*/ (7 skills)');
       expect(result.files.some((f) => f.startsWith('.agents/skills/'))).toBe(false);
       await expect(fs.access(path.join(noAgentsDir, '.agents'))).rejects.toThrow();
     } finally {
@@ -815,7 +817,7 @@ Old content here.
       const result = await generateAIContextFiles(agentsDir, agentsStorage, 'TestProject', stats);
 
       // Canonical 6 skills are all present.
-      expect(result.files).toContain('.claude/skills/gitnexus-*/ (6 skills)');
+      expect(result.files).toContain('.claude/skills/gitnexus-*/ (7 skills)');
       for (const name of [
         'gitnexus-exploring',
         'gitnexus-debugging',
@@ -848,7 +850,7 @@ Old content here.
       const stats = { nodes: 50, edges: 100, processes: 5 };
       const result = await generateAIContextFiles(fileDir, fileStorage, 'TestProject', stats);
 
-      expect(result.files).toContain('.claude/skills/gitnexus-*/ (6 skills)');
+      expect(result.files).toContain('.claude/skills/gitnexus-*/ (7 skills)');
       expect(result.files.some((f) => f.startsWith('.agents/skills/'))).toBe(false);
     } finally {
       await fs.rm(fileDir, { recursive: true, force: true });

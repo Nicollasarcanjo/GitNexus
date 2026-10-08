@@ -580,6 +580,16 @@ program
   .action(createLbugLazyAction(() => import('./tool.js'), 'affectedTestsCommand'));
 
 program
+  .command('test-gaps [path...]')
+  .alias('test_gaps')
+  .description('Source files no test reaches, grouped by folder and ranked by dependents')
+  .option('-l, --limit <n>', 'Max uncovered files to list (default: 200)')
+  .option('--min-confidence <n>', 'Ignore dependency edges below this confidence (default: 0.8)')
+  .option('-r, --repo <name>', 'Target repository')
+  .option('--branch <name>', 'Scope to a specific branch index (multi-branch repos)')
+  .action(createLbugLazyAction(() => import('./tool.js'), 'testGapsCommand'));
+
+program
   .command('check')
   .description('Run structural checks against the indexed graph')
   .option('--cycles', 'Detect circular imports and fail when any are found')

@@ -52,6 +52,51 @@ WHERE r.type IN [${FILE_DEPENDENCY_EDGE_TYPES.map((t) => `'${t}'`).join(', ')}]
 RETURN DISTINCT a.filePath AS src, b.filePath AS dst`;
 }
 
+/**
+ * A file that consumes a route (a test requesting it, a template posting to it)
+ * paired with each handler of that route. One row per (consumer, handler, route).
+ */
+export const ROUTE_BRIDGE_QUERY = `MATCH (c)-[f:CodeRelation]->(r:Route)<-[h:CodeRelation]-(x)
+WHERE f.type = 'FETCHES' AND h.type = 'HANDLES_ROUTE' AND c.filePath <> x.filePath
+RETURN DISTINCT c.filePath AS src, x.filePath AS dst, r.id AS route, label(x) AS handlerLabel`;
+
+export interface RouteBridgeRow {
+  src: string;
+  dst: string;
+  route: string;
+  /** Node label of the handler: `File` for the routes file itself. */
+  handlerLabel: string;
+}
+
+/**
+ * Test → handler edges across the HTTP boundary.
+ *
+ * Only tests are bridged. A template that links to a route does not depend on
+ * its handler to render, and a layout links to most of the app: bridging it
+ * makes every test that renders any page depend on every controller in the menu.
+ *
+ * A routes file "handles" every route it declares; when a route also has a real
+ * handler (a controller method) only that one is kept, or every test would
+ * depend on the routes file and, through its imports, on every controller.
+ */
+export function bridgeRouteEdges(rows: readonly RouteBridgeRow[]): FileDependencyEdge[] {
+  const routesWithSymbolHandler = new Set<string>();
+  for (const row of rows) {
+    if (row.handlerLabel !== 'File') routesWithSymbolHandler.add(row.route);
+  }
+  const seen = new Set<string>();
+  const edges: FileDependencyEdge[] = [];
+  for (const row of rows) {
+    if (!isTestFilePath(row.src)) continue;
+    if (row.handlerLabel === 'File' && routesWithSymbolHandler.has(row.route)) continue;
+    const key = `${row.src}\u0000${row.dst}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    edges.push({ src: row.src, dst: row.dst });
+  }
+  return edges;
+}
+
 export const INDEXED_FILES_QUERY = `MATCH (f:File) RETURN f.filePath AS filePath`;
 
 export const PATH_IMPACT_DEFAULT_MAX_DEPTH = 3;
@@ -352,10 +397,22 @@ const IGNORABLE_BASENAMES = new Set([
   'changelog',
   '.gitignore',
   '.gitattributes',
+  '.editorconfig',
+  '.dockerignore',
+  '.env.example',
+  'dockerfile',
 ]);
+/** CI and container definitions describe where code runs, not what it does. */
+const IGNORABLE_PATH_PATTERNS: readonly RegExp[] = [
+  /^\.github\//,
+  /(^|\/)docker-compose[\w.-]*\.ya?ml$/,
+  /(^|\/)dockerfile\.[\w-]+$/,
+];
 
 export function isIgnorableChange(filePath: string): boolean {
-  const base = filePath.slice(filePath.lastIndexOf('/') + 1).toLowerCase();
+  const lower = filePath.toLowerCase();
+  if (IGNORABLE_PATH_PATTERNS.some((pattern) => pattern.test(lower))) return true;
+  const base = lower.slice(lower.lastIndexOf('/') + 1);
   if (IGNORABLE_BASENAMES.has(base)) return true;
   const dot = base.lastIndexOf('.');
   return dot !== -1 && IGNORABLE_EXTENSIONS.has(base.slice(dot));
@@ -395,6 +452,8 @@ export interface AffectedTestsResult {
   changed: Array<{ filePath: string; status: ChangeStatus; coverage: Coverage; tests: number }>;
   runner: TestRunner | null;
   command_hint: string | null;
+  /** One ready-to-run command per runner the selected tests need. */
+  commands: TestCommand[];
   note: string;
 }
 
@@ -532,6 +591,10 @@ export function computeAffectedTests(input: AffectedTestsInput): AffectedTestsRe
             testRows.map((t) => t.filePath),
           )
         : null,
+    commands: buildTestCommands(
+      testRows.map((t) => t.filePath),
+      input.indexedFiles,
+    ),
     note: STATIC_GRAPH_NOTE,
   };
 }
@@ -540,7 +603,21 @@ export function computeAffectedTests(input: AffectedTestsInput): AffectedTestsRe
 // test runner hint
 // ---------------------------------------------------------------------------
 
-export type TestRunner = 'artisan' | 'phpunit' | 'vitest' | 'jest' | 'pytest' | 'go';
+export type TestRunner =
+  | 'artisan'
+  | 'phpunit'
+  | 'dusk'
+  | 'vitest'
+  | 'jest'
+  | 'playwright'
+  | 'pytest'
+  | 'go';
+
+export interface TestCommand {
+  runner: TestRunner;
+  command: string;
+  tests: number;
+}
 
 /** Best-effort guess from the selected tests and what sits at the repo root. */
 export function detectTestRunner(
@@ -578,10 +655,14 @@ export function buildTestCommand(runner: TestRunner, testFiles: readonly string[
       return `php artisan test --filter "${phpClassFilter(testFiles)}"`;
     case 'phpunit':
       return `vendor/bin/phpunit --filter "${phpClassFilter(testFiles)}"`;
+    case 'dusk':
+      return `php artisan dusk --filter "${phpClassFilter(testFiles)}"`;
     case 'vitest':
       return `npx vitest run ${files}`;
     case 'jest':
       return `npx jest ${files}`;
+    case 'playwright':
+      return `npx playwright test ${files}`;
     case 'pytest':
       return `pytest ${files}`;
     case 'go': {
@@ -589,4 +670,177 @@ export function buildTestCommand(runner: TestRunner, testFiles: readonly string[
       return `go test ${packages.map(quoteArg).join(' ')}`;
     }
   }
+}
+
+const JS_TEST_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
+
+/** Which runner executes one test file; `null` when nothing here recognises it. */
+function runnerForTestFile(
+  testFile: string,
+  ctx: { artisan: boolean; jest: boolean; playwright: boolean },
+): TestRunner | null {
+  const lower = testFile.toLowerCase();
+  if (lower.endsWith('.php')) {
+    // Laravel Dusk keeps browser tests under tests/Browser and has its own command.
+    if (ctx.artisan && `/${lower}`.includes('/tests/browser/')) return 'dusk';
+    return ctx.artisan ? 'artisan' : 'phpunit';
+  }
+  if (lower.endsWith('.py')) return 'pytest';
+  if (lower.endsWith('_test.go')) return 'go';
+  if (JS_TEST_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+    if (ctx.playwright && /(^|\/)(e2e|playwright)\//.test(lower)) return 'playwright';
+    return ctx.jest ? 'jest' : 'vitest';
+  }
+  return null;
+}
+
+/**
+ * One command per runner. A diff that touches a PHP service and a browser spec
+ * needs both suites; `command_hint` alone can only name one.
+ */
+export function buildTestCommands(
+  testFiles: readonly string[],
+  indexedFiles: readonly string[],
+): TestCommand[] {
+  const ctx = {
+    artisan: indexedFiles.includes('artisan'),
+    jest: indexedFiles.some((f) => /^jest\.config\.[cm]?[jt]s$/.test(f)),
+    playwright: indexedFiles.some((f) => /(^|\/)playwright\.config\.[cm]?[jt]s$/.test(f)),
+  };
+  const byRunner = new Map<TestRunner, string[]>();
+  for (const file of testFiles) {
+    const runner = runnerForTestFile(file, ctx);
+    if (!runner) continue;
+    const list = byRunner.get(runner);
+    if (list) list.push(file);
+    else byRunner.set(runner, [file]);
+  }
+  return [...byRunner].map(([runner, files]) => ({
+    runner,
+    command: buildTestCommand(runner, files),
+    tests: files.length,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// test_gaps
+// ---------------------------------------------------------------------------
+
+export const TEST_GAPS_DEFAULT_LIMIT = 200;
+
+export interface TestGapsInput {
+  indexedFiles: readonly string[];
+  edges: readonly FileDependencyEdge[];
+  /** Restrict the report to these folders/files; empty or absent = whole repo. */
+  paths?: readonly string[];
+  /** Cap on the `files` listing (areas and counts are never capped). */
+  limit?: number;
+}
+
+export interface TestGapsResult {
+  paths: string[];
+  unmatched_paths: string[];
+  summary: {
+    test_files: number;
+    source_files: number;
+    covered: number;
+    uncovered: number;
+    /** Uncovered files with no static link at all (templates, config, assets). */
+    unlinked: number;
+    coverage_pct: number;
+  };
+  /** Folders with uncovered files, riskiest first. */
+  areas: Array<{
+    folder: string;
+    files: number;
+    uncovered: number;
+    coverage_pct: number;
+    /** Direct dependents of the folder's uncovered files, summed. */
+    dependents: number;
+  }>;
+  /** Uncovered files, most depended-on first. */
+  files: Array<{ filePath: string; folder: string; dependents: number; linked: boolean }>;
+  truncated: boolean;
+  note: string;
+}
+
+const pct = (part: number, whole: number): number =>
+  whole === 0 ? 100 : Math.round((part / whole) * 1000) / 10;
+
+/**
+ * Source files no test reaches through the graph, grouped by folder. "Covered"
+ * here means a test depends on the file, directly or transitively — not that
+ * its lines execute — so this ranks where tests are missing, nothing more.
+ */
+export function computeTestGaps(input: TestGapsInput): TestGapsResult {
+  const limit = input.limit ?? TEST_GAPS_DEFAULT_LIMIT;
+  const paths = (input.paths ?? []).map(normalizeRepoPath).filter((p) => p !== '');
+  const scoped = paths.length > 0 ? matchSeedFiles(input.indexedFiles, paths) : null;
+
+  const dependents = buildDependentsIndex(input.edges);
+  const dependencies = buildDependenciesIndex(input.edges);
+  const testFiles = input.indexedFiles.filter((f) => isTestFilePath(f));
+  // Walking "depends on" from the tests is reverseReach over the opposite index.
+  const covered = reverseReach(dependencies, testFiles, null);
+
+  const sources = input.indexedFiles.filter(
+    (f) => !isTestFilePath(f) && !isIgnorableChange(f) && (!scoped || scoped.seeds.has(f)),
+  );
+
+  const areas = new Map<string, { files: number; uncovered: number; dependents: number }>();
+  const uncovered: TestGapsResult['files'] = [];
+  for (const filePath of sources) {
+    const folder = dirnameOf(filePath);
+    const area = areas.get(folder) ?? { files: 0, uncovered: 0, dependents: 0 };
+    areas.set(folder, area);
+    area.files += 1;
+    if (covered.has(filePath)) continue;
+    const dependentCount = new Set(dependents.get(filePath) ?? []).size;
+    area.uncovered += 1;
+    area.dependents += dependentCount;
+    uncovered.push({
+      filePath,
+      folder,
+      dependents: dependentCount,
+      linked: dependentCount > 0 || dependencies.has(filePath),
+    });
+  }
+
+  const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  uncovered.sort(
+    (a, b) =>
+      b.dependents - a.dependents ||
+      Number(b.linked) - Number(a.linked) ||
+      byName(a.filePath, b.filePath),
+  );
+  const areaRows = [...areas]
+    .filter(([, area]) => area.uncovered > 0)
+    .map(([folder, area]) => ({
+      folder,
+      files: area.files,
+      uncovered: area.uncovered,
+      coverage_pct: pct(area.files - area.uncovered, area.files),
+      dependents: area.dependents,
+    }))
+    .sort(
+      (a, b) =>
+        b.dependents - a.dependents || b.uncovered - a.uncovered || byName(a.folder, b.folder),
+    );
+
+  return {
+    paths,
+    unmatched_paths: scoped?.unmatched ?? [],
+    summary: {
+      test_files: testFiles.length,
+      source_files: sources.length,
+      covered: sources.length - uncovered.length,
+      uncovered: uncovered.length,
+      unlinked: uncovered.filter((f) => !f.linked).length,
+      coverage_pct: pct(sources.length - uncovered.length, sources.length),
+    },
+    areas: areaRows,
+    files: uncovered.slice(0, limit),
+    truncated: uncovered.length > limit,
+    note: STATIC_GRAPH_NOTE,
+  };
 }

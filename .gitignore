@@ -114,6 +114,7 @@ gitnexus/vendor/**/node_modules/
 !.claude/skills/gitnexus-plan/
 !.claude/skills/gitnexus-work/
 !.claude/skills/gitnexus-lfg/
+!.claude/skills/testes/
 
 .history/
 

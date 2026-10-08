@@ -459,6 +459,7 @@ Returns:
 - summary.fallback: "none" or "full_suite"
 - fallback_reasons: one sentence per change that could not be mapped (non-source files such as config, migrations, templates, lockfiles; deleted files; source no test reaches)
 - runner / command_hint: detected test runner and a ready-to-run command
+- commands: one ready-to-run command per runner when the selection spans several (PHP, JS unit, browser)
 
 LIMITS: static graph, so this is a lower bound — a test that reaches the code only at runtime (HTTP route, container lookup) is not seen. Keep a periodic full-suite run. Untracked (never added) files are not part of a git diff and are not considered.`,
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
@@ -491,6 +492,48 @@ LIMITS: static graph, so this is a lower bound — a test that reaches the code 
           description:
             'Treat heuristic ("related") coverage as not covered, so those changes ask for the full suite (default: false).',
           default: false,
+        },
+        min_confidence: {
+          type: 'number',
+          description: 'Ignore dependency edges below this confidence (default: 0.8).',
+          default: 0.8,
+        },
+        repo: {
+          type: 'string',
+          description: `Repository name or path. ${CWD_AWARE_REPO_OMISSION}`,
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'test_gaps',
+    description: `List the source files no test reaches, grouped by folder and ranked by how much depends on them.
+
+WHEN TO USE: Before writing tests — to pick what to cover next — and after a batch of new tests plus a re-index, to see the gap shrink.
+AFTER THIS: Take the first area, read path_impact() for it, write the tests, run them, re-analyze, call this again.
+
+Returns:
+- summary: test_files, source_files, covered, uncovered, unlinked, coverage_pct
+- areas: folders with uncovered files, riskiest first (dependents = direct dependents of the folder's uncovered files)
+- files: uncovered files, most depended-on first; linked=false means the graph has no edge for the file at all (template, config, asset); capped by limit, see truncated
+- unmatched_paths: inputs that matched no indexed file
+
+LIMITS: "covered" means a test depends on the file through calls, imports or inheritance — not that its lines execute. A file exercised only at runtime (a controller behind a route hit by URL) shows as uncovered.`,
+    annotations: READ_ONLY_TOOL_ANNOTATIONS,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        paths: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Repo-relative folders and/or files to restrict the report to. Omit for the whole repository.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max entries in "files" (default: 200). Areas and counts are never capped.',
+          default: 200,
         },
         min_confidence: {
           type: 'number',
@@ -1249,6 +1292,7 @@ export const REPO_SCOPED_TOOLS = new Set([
   'detect_changes',
   'path_impact',
   'affected_tests',
+  'test_gaps',
   'explain',
   'pdg_query',
   'check',

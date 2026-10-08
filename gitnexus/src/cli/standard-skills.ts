@@ -1,7 +1,7 @@
 export type StandardSkillDistribution = 'project' | 'npm' | 'claudePlugin' | 'cursor';
 
 export interface StandardSkillCatalogEntry {
-  readonly name: `gitnexus-${string}`;
+  readonly name: `gitnexus-${string}` | 'testes';
   readonly agentTableTask: string;
   readonly fallbackDescription: string;
   readonly distributions: Readonly<Record<StandardSkillDistribution, boolean>>;
@@ -55,6 +55,13 @@ export const STANDARD_SKILL_CATALOG = [
     agentTableTask: 'Index, status, clean, wiki CLI commands',
     fallbackDescription:
       'Use when the user needs to run GitNexus CLI commands like analyze/index a repo, check status, clean the index, generate a wiki, or list indexed repos. Examples: "Index this repo", "Reanalyze the codebase", "Generate a wiki"',
+    distributions: { project: true, npm: true, claudePlugin: true, cursor: false },
+  },
+  {
+    name: 'testes',
+    agentTableTask: 'Run affected / write missing tests',
+    fallbackDescription:
+      'Use to run or write tests guided by the GitNexus graph: with pending changes it runs only the tests the graph links to the changed files; without changes it runs the existing suite; "gerar" writes the missing tests area by area. Examples: "/testes", "/testes gerar", "run the affected tests"',
     distributions: { project: true, npm: true, claudePlugin: true, cursor: false },
   },
 ] as const satisfies readonly StandardSkillCatalogEntry[];

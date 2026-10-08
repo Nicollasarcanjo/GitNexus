@@ -11,6 +11,7 @@ export const MCP_READ_ONLY_TOOLS = new Set([
   'detect_changes',
   'path_impact',
   'affected_tests',
+  'test_gaps',
   'check',
   'impact',
   'explain',
