@@ -886,6 +886,8 @@ export const fetchGraph = async (
   return JSON.parse(new TextDecoder().decode(combined));
 };
 
+const PROGRESS_INTERVAL_MS = 100;
+
 const parseNdjsonGraphResponse = async (
   response: Response,
   onProgress?: (downloaded: number, total: number | null) => void,
@@ -904,6 +906,7 @@ const parseNdjsonGraphResponse = async (
   const relationships: GraphRelationship[] = [];
   let buffer = '';
   let downloaded = 0;
+  let lastProgressAt = -Infinity;
 
   // Streaming circuit breaker (#2178): enforce the size limits mid-download as a
   // backstop when pre-fetch stats were missing. Same `> threshold` comparison as
@@ -954,7 +957,13 @@ const parseNdjsonGraphResponse = async (
     if (done) break;
 
     downloaded += value.length;
-    onProgress?.(downloaded, total);
+    // Throttle: a large graph arrives in thousands of small chunks, and each
+    // report re-renders the app — unthrottled, that outweighs the download.
+    const now = performance.now();
+    if (now - lastProgressAt >= PROGRESS_INTERVAL_MS) {
+      lastProgressAt = now;
+      onProgress?.(downloaded, total);
+    }
     buffer += decoder.decode(value, { stream: true });
 
     const lines = buffer.split('\n');
@@ -965,6 +974,7 @@ const parseNdjsonGraphResponse = async (
     }
   }
 
+  onProgress?.(downloaded, total);
   buffer += decoder.decode();
   parseLine(buffer);
   if (overLimit()) await tripBreaker();

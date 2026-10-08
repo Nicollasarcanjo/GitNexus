@@ -2399,7 +2399,10 @@ export const tryFlushWAL = async (): Promise<boolean> => {
  * @see closeLbug — safeClose + module state reset (full teardown)
  */
 export const safeClose = async (): Promise<void> => {
-  await flushWAL();
+  // A read-only connection has nothing to flush, and its CHECKPOINT still
+  // leaves an empty `.wal` + `.shadow` behind that makes the next read-only
+  // open of the same database fail ("Cannot open file ... lbug.shadow").
+  if (!(conn && currentDbReadOnly)) await flushWAL();
   // Capture before close — currentDbPath stays set so the Windows post-close
   // probe below knows which file to wait on.
   const closingDbPath = currentDbPath;

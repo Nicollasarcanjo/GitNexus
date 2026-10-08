@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "gitnexus-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "gitnexus-web", "run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "gitnexus-serve",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "gitnexus", "run", "serve"],
+      "port": 4747
+    }
+  ]
+}

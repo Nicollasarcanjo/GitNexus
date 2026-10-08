@@ -328,12 +328,16 @@ const ensureStreamIsWritable = (res: express.Response, signal?: AbortSignal): vo
   }
 };
 
-const waitForDrain = async (res: express.Response, signal?: AbortSignal): Promise<void> => {
+const waitForDrain = async (
+  res: express.Response,
+  signal?: AbortSignal,
+  drainSource: Pick<express.Response, 'once' | 'off'> = res,
+): Promise<void> => {
   ensureStreamIsWritable(res, signal);
 
   await new Promise<void>((resolve, reject) => {
     const cleanup = () => {
-      res.off('drain', onDrain);
+      drainSource.off('drain', onDrain);
       res.off('close', onClose);
       signal?.removeEventListener('abort', onAbort);
     };
@@ -351,7 +355,7 @@ const waitForDrain = async (res: express.Response, signal?: AbortSignal): Promis
       reject(new ClientDisconnectedError());
     };
 
-    res.once('drain', onDrain);
+    drainSource.once('drain', onDrain);
     res.once('close', onClose);
     signal?.addEventListener('abort', onAbort, { once: true });
 
@@ -373,6 +377,8 @@ const isClientDisconnectWriteError = (err: unknown): boolean => {
   );
 };
 
+const corkedGraphStreams = new WeakSet<express.Response>();
+
 export const writeNdjsonRecord = async (
   res: express.Response,
   record: GraphStreamRecord,
@@ -382,8 +388,22 @@ export const writeNdjsonRecord = async (
 
   try {
     const canContinue = res.write(JSON.stringify(record) + '\n');
-    if (!canContinue) {
+    if (canContinue) return;
+    if (!corkedGraphStreams.has(res)) {
       await waitForDrain(res, signal);
+      return;
+    }
+    // Corked (streamGraphNdjson): `false` means the batch is full, not that the
+    // socket is backed up. Release the batch; the response only emits 'drain'
+    // if the socket itself pushed back, so that is the one case worth waiting on.
+    res.uncork();
+    try {
+      const socket = res.socket;
+      if (socket?.writableNeedDrain) {
+        await waitForDrain(res, signal, socket as unknown as express.Response);
+      }
+    } finally {
+      res.cork();
     }
   } catch (err) {
     if (isClientDisconnectWriteError(err)) {
@@ -558,6 +578,29 @@ const mapGraphRelationshipRow = (row: any): GraphRelationship => ({
 export const streamGraphNdjson = async (
   res: express.Response,
   includeContent = false,
+  signal?: AbortSignal,
+): Promise<void> => {
+  // One write per record reaches the client as one tiny HTTP chunk per record
+  // (100k+ for a mid-size repo), which browsers consume far slower than the
+  // server produces. Corking batches them; writeNdjsonRecord flushes each batch.
+  const canCork = typeof res.cork === 'function' && typeof res.uncork === 'function';
+  if (canCork) {
+    res.cork();
+    corkedGraphStreams.add(res);
+  }
+  try {
+    await streamGraphRecords(res, includeContent, signal);
+  } finally {
+    if (canCork) {
+      corkedGraphStreams.delete(res);
+      res.uncork();
+    }
+  }
+};
+
+const streamGraphRecords = async (
+  res: express.Response,
+  includeContent: boolean,
   signal?: AbortSignal,
 ): Promise<void> => {
   for (const table of NODE_TABLES) {
